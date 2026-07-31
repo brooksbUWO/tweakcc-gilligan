@@ -291,15 +291,11 @@ def prepare_stage():
         except Exception as e:
             log(f"  Warning: GCV check failed: {e}")
 
-    # Recipe Step 4: Reset Target Version to Stock
+    # Record GCV Target Version for apply stage (do NOT run npm install during prepare)
     if gcv_ver:
-        log(f"Resetting Claude Code to stock version @{gcv_ver}...")
-        try:
-            npm_cmd = shutil.which("npm") or "npm"
-            run_cmd([npm_cmd, "install", "-g", f"@anthropic-ai/claude-code@{gcv_ver}"], timeout=300, shell=(sys.platform == "win32"))
-            log(f"  [OK] Reset Claude Code to stock @{gcv_ver}")
-        except Exception as e:
-            log(f"  Warning: Stock reset failed: {e}")
+        target_gcv_file = GILLIGAN_DIR / "target_gcv.txt"
+        target_gcv_file.write_text(gcv_ver, encoding="utf-8")
+        log(f"  [OK] Recorded target version @{gcv_ver} for apply stage")
 
     # Sync repositories
     tweakcc_repo, twk_sha = ensure_repo("tweakcc-fixed", "https://github.com/skrabe/tweakcc-fixed.git")
@@ -354,28 +350,27 @@ def prepare_stage():
     log(f"  [OK] Configured ccInstallationPath = {real_bin}")
 
     # Generate External Apply Script (to respect hard session boundary)
+    install_py_path = pathlib.Path(__file__).resolve().as_posix()
+    verify_py_path = (pathlib.Path(__file__).resolve().parent / "verify.py").as_posix()
     if sys.platform == "win32":
         ext_script = GILLIGAN_DIR / "apply-external.bat"
-        bash_path = find_bash_executable()
-        bash_str = str(bash_path) if bash_path else "bash"
         script_content = f"""@echo off
 echo === Applying tweakcc-fixed and unnerfcc Patches ===
 echo Please ensure all Claude Code sessions are closed!
 pause
-node "{dist_mjs.as_posix()}" --apply
+python "{install_py_path}" --apply
 if errorlevel 1 (
-    echo tweakcc-fixed apply failed!
+    echo install.py --apply failed!
     pause
     exit /b 1
 )
-"{bash_str}" -lc "cd '{unnerf_repo.as_posix()}' && ./install.sh"
+python "{verify_py_path}"
 if errorlevel 1 (
-    echo unnerfcc apply failed!
+    echo verify.py failed!
     pause
     exit /b 1
 )
-echo === Patches Applied Successfully! ===
-python "{pathlib.Path(__file__).resolve().parent.as_posix()}/verify.py"
+echo === Patches Applied and Verified Successfully! ===
 pause
 """
         ext_script.write_text(script_content, encoding="utf-8")
@@ -385,10 +380,9 @@ pause
         script_content = f"""#!/usr/bin/env bash
 set -e
 echo "=== Applying tweakcc-fixed and unnerfcc Patches ==="
-node "{dist_mjs.as_posix()}" --apply
-( cd "{unnerf_repo.as_posix()}" && ./install.sh )
-echo "=== Patches Applied Successfully! ==="
-python3 "{pathlib.Path(__file__).resolve().parent.as_posix()}/verify.py"
+python3 "{install_py_path}" --apply
+python3 "{verify_py_path}"
+echo "=== Patches Applied and Verified Successfully! ==="
 """
         ext_script.write_text(script_content, encoding="utf-8")
         ext_script.chmod(0o755)
@@ -400,6 +394,35 @@ python3 "{pathlib.Path(__file__).resolve().parent.as_posix()}/verify.py"
 def apply_stage():
     log("=== Stage 2: Applying Patches to Binary ===")
     preflight_checks(require_no_claude=True)
+
+    # Recipe Step 4: Reset Target Version to Stock
+    gcv_ver = None
+    target_gcv_file = GILLIGAN_DIR / "target_gcv.txt"
+    if target_gcv_file.exists():
+        try:
+            gcv_ver = target_gcv_file.read_text(encoding="utf-8").strip()
+        except Exception:
+            pass
+
+    if not gcv_ver:
+        gcv_script = pathlib.Path(__file__).resolve().parent / "check_version_intersection.py"
+        if gcv_script.exists():
+            try:
+                gcv_out = run_cmd([sys.executable, str(gcv_script)])
+                m = re.search(r"greatest common version = (\S+)", gcv_out)
+                if m:
+                    gcv_ver = m.group(1)
+            except Exception as e:
+                log(f"  Warning: GCV check failed in apply_stage: {e}")
+
+    if gcv_ver:
+        log(f"Resetting Claude Code to stock version @{gcv_ver}...")
+        try:
+            npm_cmd = shutil.which("npm") or "npm"
+            run_cmd([npm_cmd, "install", "-g", f"@anthropic-ai/claude-code@{gcv_ver}"], timeout=300, shell=(sys.platform == "win32"))
+            log(f"  [OK] Reset Claude Code to stock @{gcv_ver}")
+        except Exception as e:
+            log(f"  Warning: Stock reset failed: {e}")
 
     tweakcc_repo = REPOS_DIR / "tweakcc-fixed"
     unnerf_repo = REPOS_DIR / "unnerfcc"

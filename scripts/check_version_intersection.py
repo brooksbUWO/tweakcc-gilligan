@@ -79,13 +79,8 @@ def get_unnerfcc_versions():
         data = fetch_json("https://api.github.com/repos/brooksbUWO/unnerfcc/contents/data/prompts?ref=windows-pe-support")
         return parse_versions([item["name"] for item in data if isinstance(item, dict) and "name" in item])
     except Exception as e:
-        # Retry with lukehutch/unnerfcc upstream
-        try:
-            data = fetch_json("https://api.github.com/repos/lukehutch/unnerfcc/contents/data/prompts")
-            return parse_versions([item["name"] for item in data if isinstance(item, dict) and "name" in item])
-        except Exception as e2:
-            sys.stderr.write(f"ERROR: Failed to fetch unnerfcc catalogs: {e2}\n")
-            return None
+        sys.stderr.write(f"ERROR: Failed to fetch unnerfcc catalogs from brooksbUWO/unnerfcc (ref=windows-pe-support): {e}\n")
+        return None
 
 def main():
     twk_versions = get_tweakcc_versions()

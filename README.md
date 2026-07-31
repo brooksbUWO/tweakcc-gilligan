@@ -39,7 +39,7 @@ python scripts/verify.py
 ## Highlights
 
 - **Unified Dual-Patcher Chain**: Applies code patches and prompt un-nerfs in the verified safe order (tweakcc-fixed first, unnerfcc second).
-- **Windows PE & Unix Support**: Native PE (`claude.exe`) unpack/repack support backed by the upstream pull request [lukehutch/unnerfcc PR](https://github.com/lukehutch/unnerfcc/pull/1) (open upstream PR).
+- **Windows PE & Unix Support**: Native PE (`claude.exe`) unpack/repack support currently ships via the [brooksbUWO/unnerfcc](https://github.com/brooksbUWO/unnerfcc/tree/windows-pe-support) `windows-pe-support` branch; an upstream PR ([lukehutch/unnerfcc PR #1](https://github.com/lukehutch/unnerfcc/pull/1)) is open, and the installer will switch to upstream once merged.
 - **Three Content Sources**: Binds code features from `tweakcc-fixed`, prompt un-nerfs from `unnerfcc`, and reminder overrides from `lobotomized-claude-code`.
 - **Runtime Isolation**: Operates under `~/.tweakcc-gilligan/` with process tree safety, PID tracking, and timestamped logs.
 
