@@ -1,0 +1,7 @@
+{
+  "name": "tweakcc-gilligan",
+  "version": "1.0.0",
+  "description": "Dual-patcher skill and automated pipeline for Claude Code binaries on Windows and Unix.",
+  "author": "Bradley Brooks",
+  "license": "MIT"
+}
