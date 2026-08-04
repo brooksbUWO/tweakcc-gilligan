@@ -1,6 +1,6 @@
 # tweakcc-gilligan
 
-Dual-patcher skill and automated pipeline for Claude Code on Windows and Unix.
+Dual-patcher skill and automated pipeline for Claude Code on Windows, Linux, iOS.
 
 tweakcc-gilligan mechanizes the complete patch sequence for customizing Claude Code binaries. It combines `tweakcc-fixed` (code patches, `/clear-screen`, session memory, empty system-reminder suppression) with `unnerfcc` (system prompt un-nerfing, reasoning effort cap removal) and populates system-reminder overrides from `lobotomized-claude-code`.
 
