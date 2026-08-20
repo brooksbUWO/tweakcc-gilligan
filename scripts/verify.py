@@ -9,11 +9,30 @@ Checks that the installed Claude Code binary carries all three patch content sou
 and verifies that dual version lines are printed by `claude --version`.
 """
 
+import argparse
 import os
 import sys
 import subprocess
 import shutil
 import pathlib
+import threading
+import time
+
+
+def _arm_watchdog(max_seconds: float, probe_seconds: float) -> None:
+    """Deterministic termination guard: hard-kill with exit code 3 at the wall-clock ceiling.
+    From recipe-skill-script-hardening (threading.Timer + os._exit; signal.alarm is POSIX-only)."""
+    if max_seconds <= 0:
+        print("error: --max-seconds must be greater than 0", file=sys.stderr)
+        sys.exit(2)
+    if probe_seconds < 0:
+        print("error: --watchdog-probe must be at least 0", file=sys.stderr)
+        sys.exit(2)
+    timer = threading.Timer(max_seconds, lambda: os._exit(3))
+    timer.daemon = True
+    timer.start()
+    if probe_seconds > 0:
+        time.sleep(probe_seconds)
 
 def find_claude_binary():
     env_path = os.environ.get("TWEAKCC_CC_INSTALLATION_PATH")
@@ -39,6 +58,14 @@ def find_claude_binary():
     return None
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--max-seconds", type=float, default=120.0, dest="max_seconds",
+                        help="Hard wall-clock ceiling in seconds; the process exits with code 3 when it fires (default: 120)")
+    parser.add_argument("--watchdog-probe", type=float, default=0.0, dest="watchdog_probe",
+                        help="Diagnostic: idle this many seconds after arming the watchdog (default: 0)")
+    args = parser.parse_args()
+    _arm_watchdog(args.max_seconds, args.watchdog_probe)
+
     print("=== tweakcc-gilligan Verification ===")
     failed = False
 

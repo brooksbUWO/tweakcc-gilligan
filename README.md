@@ -1,6 +1,6 @@
 # tweakcc-gilligan
 
-Dual-patcher skill and automated pipeline for Claude Code on Windows, Linux, iOS.
+Dual-patcher skill and automated pipeline for Claude Code on Windows and Unix.
 
 tweakcc-gilligan mechanizes the complete patch sequence for customizing Claude Code binaries. It combines `tweakcc-fixed` (code patches, `/clear-screen`, session memory, empty system-reminder suppression) with `unnerfcc` (system prompt un-nerfing, reasoning effort cap removal) and populates system-reminder overrides from `lobotomized-claude-code`.
 
@@ -39,17 +39,18 @@ python scripts/verify.py
 ## Highlights
 
 - **Unified Dual-Patcher Chain**: Applies code patches and prompt un-nerfs in the verified safe order (tweakcc-fixed first, unnerfcc second).
-- **Windows PE & Unix Support**: Native PE (`claude.exe`) unpack/repack support currently ships via the [brooksbUWO/unnerfcc](https://github.com/brooksbUWO/unnerfcc/tree/windows-pe-support) `windows-pe-support` branch; an upstream PR ([lukehutch/unnerfcc PR #1](https://github.com/lukehutch/unnerfcc/pull/1)) is open, and the installer will switch to upstream once merged.
+- **Windows PE & Unix Support**: Native PE (`claude.exe`) unpack/repack support currently ships via the [brooksbUWO/unnerfcc](https://github.com/brooksbUWO/unnerfcc/tree/windows-pe-support-2) `windows-pe-support-2` branch (the Windows changes merged onto upstream's current main); an upstream PR ([lukehutch/unnerfcc PR #2](https://github.com/lukehutch/unnerfcc/pull/2)) is open, and the installer will switch to upstream once merged.
 - **Three Content Sources**: Binds code features from `tweakcc-fixed`, prompt un-nerfs from `unnerfcc`, and reminder overrides from `lobotomized-claude-code`.
 - **Runtime Isolation**: Operates under `~/.tweakcc-gilligan/` with process tree safety, PID tracking, and timestamped logs.
 
 ## Command Reference
 
-- `python scripts/install.py --prepare`: Prepares patcher repositories, populates system reminders, builds binaries, and generates the external apply script.
-- `python scripts/install.py --apply`: Applies tweakcc-fixed and unnerfcc patches to the installed Claude Code binary.
+- `python scripts/install.py --prepare`: Syncs the patcher repositories (fast-forwarded to their remotes; a stale version-source clone stops the run), records the target Claude Code version to `~/.tweakcc-gilligan/target_version.txt`, populates system reminders, builds binaries, and generates the external apply script.
+- `python scripts/install.py --apply`: Resets Claude Code to the version prepare recorded (it refuses to run without that record), then applies tweakcc-fixed and unnerfcc patches to the installed binary.
 - `python scripts/verify.py`: Confirms dual version output (`claude --version`) and verifies markers from all three content sources in the executable.
-- `python scripts/check_version_intersection.py`: Queries GitHub and local catalogs to find the greatest common supported release.
+- `python scripts/check_version_intersection.py`: Reads the local catalog clones (falling back to GitHub) and npm to find the greatest common supported release.
 - `python scripts/install.py --clean-backup`: Removes poisoned tweakcc backup files if needed.
+- `python scripts/test_termination_contract.py`: Runs the black-box suite pinning the scripts' termination contract (`--max-seconds` ceiling, exit codes 0/1/2/3).
 
 ## Resetting to Stock
 
