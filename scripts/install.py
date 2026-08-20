@@ -18,6 +18,7 @@ import subprocess
 import pathlib
 import datetime
 import argparse
+import threading
 
 # --- Constants & Configuration -----------------------------------------------
 
@@ -42,6 +43,33 @@ BUILTIN_SKILLS = [
 
 LOG_FILE = None
 PID_REGISTRY = []
+
+# Real upstream sources whose commit subjects carry the supported Claude Code
+# version (the author syncs by commit, not by release, so commit subjects are
+# the version truth). Keyed by repo_name as used in ensure_repo.
+UPSTREAM_PROBES = {
+    "unnerfcc": ("https://github.com/lukehutch/unnerfcc.git", "main"),
+}
+
+# Matches upstream sync-commit subjects like "sync to Claude Code v2.1.235"
+# and "sync prompts to Claude Code v2.1.222".
+SYNC_SUBJECT_RE = re.compile(r"sync(?:\s+prompts)?\s+to\s+Claude Code\s+v(\d+\.\d+\.\d+)", re.IGNORECASE)
+
+
+def _arm_watchdog(max_seconds: float, probe_seconds: float) -> None:
+    """Deterministic termination guard: hard-kill with exit code 3 at the wall-clock ceiling.
+    From recipe-skill-script-hardening (threading.Timer + os._exit; signal.alarm is POSIX-only)."""
+    if max_seconds <= 0:
+        print("error: --max-seconds must be greater than 0", file=sys.stderr)
+        sys.exit(2)
+    if probe_seconds < 0:
+        print("error: --watchdog-probe must be at least 0", file=sys.stderr)
+        sys.exit(2)
+    timer = threading.Timer(max_seconds, lambda: os._exit(3))
+    timer.daemon = True
+    timer.start()
+    if probe_seconds > 0:
+        time.sleep(probe_seconds)
 
 # --- Logging & Process Helpers -----------------------------------------------
 
@@ -112,13 +140,25 @@ def run_cmd(cmd, cwd=None, env=None, timeout=600, shell=False):
 
 # --- Lockfile Management -----------------------------------------------------
 
+# A lock older than this is treated as orphaned regardless of its PID: a
+# watchdog kill (os._exit(3)) skips remove_lock(), and PID reuse can make an
+# orphaned lock's PID read as a live unrelated process, permanently blocking
+# runs. Age is the tiebreaker; the ceiling comfortably exceeds any real run.
+STALE_LOCK_SECONDS = 4 * 3600
+
+
 def acquire_lock():
     GILLIGAN_DIR.mkdir(parents=True, exist_ok=True)
     if LOCK_FILE.exists():
         try:
             lock_data = json.loads(LOCK_FILE.read_text(encoding="utf-8"))
             pid = lock_data.get("pid")
-            if sys.platform == "win32":
+            lock_ts = lock_data.get("timestamp")
+            if isinstance(lock_ts, (int, float)) and (time.time() - lock_ts) > STALE_LOCK_SECONDS:
+                age_h = (time.time() - lock_ts) / 3600
+                log(f"  [WARN] Removing stale install.lock (age {age_h:.1f} h, PID {pid}); "
+                    f"a lock this old is an orphan from a killed run, not a live install.")
+            elif sys.platform == "win32":
                 res = subprocess.run(["tasklist", "/FI", f"PID eq {pid}"], capture_output=True, text=True)
                 if str(pid) in res.stdout:
                     die(f"Another install process is running (PID {pid}).", "Wait for active install to finish or remove ~/.tweakcc-gilligan/install.lock.")
@@ -203,7 +243,7 @@ def preflight_checks(require_no_claude=True):
 
 # --- Git Repo Helpers --------------------------------------------------------
 
-def ensure_repo(repo_name, git_url, branch=None):
+def ensure_repo(repo_name, git_url, branch=None, version_source=False):
     REPOS_DIR.mkdir(parents=True, exist_ok=True)
     target = REPOS_DIR / repo_name
     if not target.exists() or not (target / ".git").exists():
@@ -223,8 +263,46 @@ def ensure_repo(repo_name, git_url, branch=None):
             try:
                 run_cmd(["git", "-C", str(target), "checkout", target_branch], timeout=30)
             except Exception:
-                run_cmd(["git", "-C", str(target), "checkout", "master"], timeout=30)
+                # The master fallback exists only for default-branch detection
+                # (main vs master). An EXPLICITLY requested branch must exist;
+                # silently landing on master could sync catalogs from the wrong
+                # branch and record a target version from the wrong source.
+                if branch:
+                    raise
+                target_branch = "master"
+                run_cmd(["git", "-C", str(target), "checkout", target_branch], timeout=30)
+            # Fast-forward to the fetched remote head. Without this the fetch is
+            # inert: the local branch silently pins its old commit (observed 143
+            # commits stale), which poisons the version-intersection result while
+            # the log still reports the repo as "ready".
+            try:
+                behind = run_cmd(["git", "-C", str(target), "rev-list", "--count",
+                                  f"{target_branch}..origin/{target_branch}"], timeout=30).strip()
+                run_cmd(["git", "-C", str(target), "merge", "--ff-only",
+                         f"origin/{target_branch}"], timeout=30)
+                if behind not in ("", "0"):
+                    log(f"  [OK] {repo_name} fast-forwarded {behind} commit(s) to origin/{target_branch}")
+            except Exception as e:
+                # A version-source repo feeds the greatest-common-version target computation; a clone
+                # that cannot reach the fetched remote head would silently record
+                # a stale target, which is the exact failure this sync exists to
+                # prevent. Fatal for version sources, warn-and-continue otherwise.
+                # (A dirty worktree also fails --ff-only, not only true divergence.)
+                if version_source:
+                    die(f"{repo_name} could not fast-forward to origin/{target_branch} ({e}). "
+                        f"This repo's catalogs decide the target Claude Code version, so a "
+                        f"stale or diverged clone must not proceed.",
+                        f"Inspect {target}: commit/stash or discard local changes, or delete the "
+                        f"clone directory and re-run --prepare to get a fresh clone.")
+                log(f"  [WARN] {repo_name} could NOT fast-forward to origin/{target_branch} ({e}); "
+                    f"local branch has diverged or is dirty — resolve manually. "
+                    f"Continuing with the existing (possibly stale) checkout.")
         except Exception as e:
+            if version_source:
+                die(f"Fetch failed for version-source repo {repo_name} ({e}); its catalogs "
+                    f"decide the target Claude Code version, so prepare cannot continue on "
+                    f"a possibly stale clone.",
+                    "Check network/GitHub access and re-run --prepare.")
             log(f"  [WARN] Fetch failed for {repo_name} ({e}); using existing checkout.")
 
     sha = "unknown"
@@ -234,6 +312,61 @@ def ensure_repo(repo_name, git_url, branch=None):
         pass
 
     log(f"  [OK] {repo_name} ready at commit {sha[:10]}")
+
+    # Upstream sync-version probe: when the repo has a declared real upstream,
+    # compare the newest "sync to Claude Code vX.Y.Z" commit subject upstream
+    # against the newest one reachable from the local HEAD. The author ships
+    # syncs as commits without releases, so commit subjects are the version
+    # truth; a gap here means the tracked fork/branch needs updating and no
+    # amount of re-running prepare can see past it.
+    probe = UPSTREAM_PROBES.get(repo_name)
+    if probe:
+        upstream_url, upstream_branch = probe
+        try:
+            # Fetch by URL into FETCH_HEAD: no persistent named remote is created
+            # or trusted, so a user-configured "upstream" remote pointing at some
+            # other URL can never be silently compared while the log names this one.
+            run_cmd(["git", "-C", str(target), "fetch", upstream_url, upstream_branch], timeout=60)
+            up_subjects = run_cmd(["git", "-C", str(target), "log", "FETCH_HEAD",
+                                   "--pretty=%s", "-100"], timeout=30)
+            local_subjects = run_cmd(["git", "-C", str(target), "log", "HEAD",
+                                      "--pretty=%s", "-200"], timeout=30)
+
+            def newest_sync_version(subjects):
+                # Highest semver among matched sync subjects, not first-in-log:
+                # a revert or a hotfix onto an old line would otherwise report a
+                # lower version as current.
+                versions = SYNC_SUBJECT_RE.findall(subjects)
+                if not versions:
+                    return None
+                return max(versions, key=lambda v: [int(x) for x in v.split(".")])
+
+            up_ver = newest_sync_version(up_subjects)
+            local_ver = newest_sync_version(local_subjects)
+            def semver_key(v):
+                return [int(x) for x in v.split(".")]
+
+            if up_ver and local_ver and semver_key(up_ver) > semver_key(local_ver):
+                log(f"  [WARN] {repo_name}: real upstream ({upstream_url}) has synced to "
+                    f"Claude Code v{up_ver} (per commit subjects), but the tracked branch "
+                    f"supports only v{local_ver}. The tracked fork/branch needs updating "
+                    f"before newer Claude Code versions can be targeted.")
+            elif up_ver and local_ver and semver_key(local_ver) > semver_key(up_ver):
+                log(f"  [OK] {repo_name}: tracked branch (v{local_ver}) is AHEAD of the real "
+                    f"upstream (v{up_ver} per commit subjects); no update needed.")
+            elif up_ver and not local_ver:
+                log(f"  [WARN] {repo_name}: upstream reports sync to v{up_ver}, but no sync "
+                    f"commit subject was found on the local branch; cannot compare.")
+            elif up_ver:
+                log(f"  [OK] {repo_name}: in sync with real upstream (both at v{up_ver} per commit subjects)")
+            else:
+                log(f"  [WARN] {repo_name}: no 'sync to Claude Code vX.Y.Z' commit subject found "
+                    f"in the newest 100 upstream commits; upstream may have changed its "
+                    f"commit conventions — probe inconclusive.")
+        except Exception as e:
+            log(f"  [WARN] {repo_name}: upstream sync-version probe failed ({e}); "
+                f"continuing without upstream comparison.")
+
     return target, sha
 
 def find_bash_executable():
@@ -277,30 +410,39 @@ def prepare_stage():
     # Recipe Step 5: Clean Poisoned Backup
     clean_poisoned_backup()
 
-    # Recipe Step 3: Determine GCV Target Version
-    gcv_ver = None
-    gcv_script = pathlib.Path(__file__).resolve().parent / "check_version_intersection.py"
-    if gcv_script.exists():
-        log("Checking greatest common supported Claude Code version...")
-        try:
-            gcv_out = run_cmd([sys.executable, str(gcv_script)])
-            log(gcv_out.strip())
-            m = re.search(r"greatest common version = (\S+)", gcv_out)
-            if m:
-                gcv_ver = m.group(1)
-        except Exception as e:
-            log(f"  Warning: GCV check failed: {e}")
-
-    # Record GCV Target Version for apply stage (do NOT run npm install during prepare)
-    if gcv_ver:
-        target_gcv_file = GILLIGAN_DIR / "target_gcv.txt"
-        target_gcv_file.write_text(gcv_ver, encoding="utf-8")
-        log(f"  [OK] Recorded target version @{gcv_ver} for apply stage")
-
-    # Sync repositories
-    tweakcc_repo, twk_sha = ensure_repo("tweakcc-fixed", "https://github.com/skrabe/tweakcc-fixed.git")
-    unnerf_repo, unf_sha = ensure_repo("unnerfcc", "https://github.com/brooksbUWO/unnerfcc.git", branch="windows-pe-support")
+    # Sync repositories FIRST. The greatest-common-version check below reads the clones' catalogs,
+    # so computing it before the sync would record a target from stale clones
+    # (observed: a 143-commit-stale tweakcc-fixed pinned the target at an old
+    # version while newer catalogs sat unfetched).
+    tweakcc_repo, twk_sha = ensure_repo("tweakcc-fixed", "https://github.com/skrabe/tweakcc-fixed.git", version_source=True)
+    unnerf_repo, unf_sha = ensure_repo("unnerfcc", "https://github.com/brooksbUWO/unnerfcc.git", branch="windows-pe-support-2", version_source=True)
     lcc_repo, lcc_sha = ensure_repo("lobotomized-claude-code", "https://github.com/skrabe/lobotomized-claude-code.git")
+
+    # Recipe Step 3: Determine the greatest-common-version target (from the now-current clones).
+    # A prepare that cannot determine and record the target is a failed prepare:
+    # the apply stage would either skip the stock reset or reset to the wrong
+    # version, so every miss here dies loudly instead of skipping silently.
+    version_check_script = pathlib.Path(__file__).resolve().parent / "check_version_intersection.py"
+    if not version_check_script.exists():
+        die(f"check_version_intersection.py not found next to install.py ({version_check_script}).",
+            "Restore the skill's scripts directory; prepare cannot record a target version without it.")
+    log("Checking greatest common supported Claude Code version...")
+    try:
+        version_check_out = run_cmd([sys.executable, str(version_check_script)])
+        log(version_check_out.strip())
+    except Exception as e:
+        die(f"Greatest-common-version check failed: {e}",
+            "Fix the error above and re-run --prepare; the apply stage must not run without a recorded target version.")
+    m = re.search(r"greatest common version = (\S+)", version_check_out)
+    if not m:
+        die("The greatest-common-version check ran but its output did not contain 'greatest common version = <ver>'.",
+            f"check_version_intersection.py output format drifted; raw output above. Fix the parser or the script.")
+    greatest_common_version = m.group(1)
+
+    # Record the greatest-common-version target for apply stage (do NOT run npm install during prepare)
+    target_version_file = GILLIGAN_DIR / "target_version.txt"
+    target_version_file.write_text(greatest_common_version, encoding="utf-8")
+    log(f"  [OK] Recorded target version @{greatest_common_version} for apply stage")
 
     # Build tweakcc-fixed if needed
     dist_mjs = tweakcc_repo / "dist" / "index.mjs"
@@ -396,33 +538,32 @@ def apply_stage():
     preflight_checks(require_no_claude=True)
 
     # Recipe Step 4: Reset Target Version to Stock
-    gcv_ver = None
-    target_gcv_file = GILLIGAN_DIR / "target_gcv.txt"
-    if target_gcv_file.exists():
+    greatest_common_version = None
+    target_version_file = GILLIGAN_DIR / "target_version.txt"
+    if target_version_file.exists():
         try:
-            gcv_ver = target_gcv_file.read_text(encoding="utf-8").strip()
+            greatest_common_version = target_version_file.read_text(encoding="utf-8").strip()
         except Exception:
             pass
 
-    if not gcv_ver:
-        gcv_script = pathlib.Path(__file__).resolve().parent / "check_version_intersection.py"
-        if gcv_script.exists():
-            try:
-                gcv_out = run_cmd([sys.executable, str(gcv_script)])
-                m = re.search(r"greatest common version = (\S+)", gcv_out)
-                if m:
-                    gcv_ver = m.group(1)
-            except Exception as e:
-                log(f"  Warning: GCV check failed in apply_stage: {e}")
+    if not greatest_common_version:
+        # No recompute fallback here, deliberately: the apply stage patches the
+        # binary against the repository state the PREPARE stage staged, so the
+        # target version must be the one prepare recorded. Recomputing now could
+        # silently pick a different version than the staged artifacts were
+        # prepared for (catalogs may have advanced since), defeating the staged
+        # handoff. A missing record means prepare did not complete; fail loudly.
+        die("No recorded target Claude Code version (target_version.txt missing or unreadable).",
+            "Run python scripts/install.py --prepare first; the apply stage only accepts the version prepare recorded.")
 
-    if gcv_ver:
-        log(f"Resetting Claude Code to stock version @{gcv_ver}...")
-        try:
-            npm_cmd = shutil.which("npm") or "npm"
-            run_cmd([npm_cmd, "install", "-g", f"@anthropic-ai/claude-code@{gcv_ver}"], timeout=300, shell=(sys.platform == "win32"))
-            log(f"  [OK] Reset Claude Code to stock @{gcv_ver}")
-        except Exception as e:
-            log(f"  Warning: Stock reset failed: {e}")
+    log(f"Resetting Claude Code to stock version @{greatest_common_version}...")
+    try:
+        npm_cmd = shutil.which("npm") or "npm"
+        run_cmd([npm_cmd, "install", "-g", f"@anthropic-ai/claude-code@{greatest_common_version}"], timeout=300, shell=(sys.platform == "win32"))
+        log(f"  [OK] Reset Claude Code to stock @{greatest_common_version}")
+    except Exception as e:
+        die(f"Stock reset to @{greatest_common_version} failed: {e}",
+            "Patching on top of an unknown or already-patched binary is unsafe. Fix npm/network and re-run the apply.")
 
     tweakcc_repo = REPOS_DIR / "tweakcc-fixed"
     unnerf_repo = REPOS_DIR / "unnerfcc"
@@ -471,7 +612,12 @@ def main():
     parser.add_argument("--apply", action="store_true", help="Execute binary patchers (must run outside active CC session)")
     parser.add_argument("--verify", action="store_true", help="Run verification check on binary")
     parser.add_argument("--clean-backup", action="store_true", help="Clear poisoned tweakcc backup files")
+    parser.add_argument("--max-seconds", type=float, default=1800.0, dest="max_seconds",
+                        help="Hard wall-clock ceiling in seconds; the process exits with code 3 when it fires (default: 1800)")
+    parser.add_argument("--watchdog-probe", type=float, default=0.0, dest="watchdog_probe",
+                        help="Diagnostic: idle this many seconds after arming the watchdog (default: 0)")
     args = parser.parse_args()
+    _arm_watchdog(args.max_seconds, args.watchdog_probe)
 
     acquire_lock()
     try:
