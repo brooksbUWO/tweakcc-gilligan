@@ -494,9 +494,8 @@ def prepare_stage():
     # Generate External Apply Script (to respect hard session boundary)
     install_py_path = pathlib.Path(__file__).resolve().as_posix()
     verify_py_path = (pathlib.Path(__file__).resolve().parent / "verify.py").as_posix()
-    if sys.platform == "win32":
-        ext_script = GILLIGAN_DIR / "apply-external.bat"
-        script_content = f"""@echo off
+    bat_script = GILLIGAN_DIR / "apply-external.bat"
+    bat_content = f"""@echo off
 echo === Applying tweakcc-fixed and unnerfcc Patches ===
 echo Please ensure all Claude Code sessions are closed!
 pause
@@ -515,22 +514,23 @@ if errorlevel 1 (
 echo === Patches Applied and Verified Successfully! ===
 pause
 """
-        ext_script.write_text(script_content, encoding="utf-8")
-        log(f"  [OK] Generated external apply script: {ext_script}")
-    else:
-        ext_script = GILLIGAN_DIR / "apply-external.sh"
-        script_content = f"""#!/usr/bin/env bash
+    bat_script.write_text(bat_content, encoding="utf-8")
+    log(f"  [OK] Generated external apply script: {bat_script}")
+
+    sh_script = GILLIGAN_DIR / "apply-external.sh"
+    sh_content = f"""#!/usr/bin/env bash
 set -e
 echo "=== Applying tweakcc-fixed and unnerfcc Patches ==="
 python3 "{install_py_path}" --apply
 python3 "{verify_py_path}"
 echo "=== Patches Applied and Verified Successfully! ==="
 """
-        ext_script.write_text(script_content, encoding="utf-8")
-        ext_script.chmod(0o755)
-        log(f"  [OK] Generated external apply script: {ext_script}")
+    sh_script.write_text(sh_content, encoding="utf-8")
+    sh_script.chmod(0o755)
+    log(f"  [OK] Generated external apply script: {sh_script}")
 
     log("\n=== Stage 1 Complete ===")
+    ext_script = bat_script if sys.platform == "win32" else sh_script
     log(f"To complete patching outside Claude Code, run: {ext_script}")
 
 def apply_stage():
