@@ -465,7 +465,7 @@ def prepare_stage():
     # single-module binary format the target uses. See ensure_repo's pin_ref
     # comment and SKILL.md "tweakcc-fixed binary-format compatibility".
     tweakcc_repo, twk_sha = ensure_repo("tweakcc-fixed", "https://github.com/skrabe/tweakcc-fixed.git", version_source=True, pin_ref="2dc353c")
-    unnerf_repo, unf_sha = ensure_repo("unnerfcc", "https://github.com/brooksbUWO/unnerfcc.git", branch="main", version_source=True)
+    unnerf_repo, unf_sha = ensure_repo("unnerfcc", "https://github.com/brooksbUWO/unnerfcc.git", branch="master", version_source=True)
     lcc_repo, lcc_sha = ensure_repo("lobotomized-claude-code", "https://github.com/skrabe/lobotomized-claude-code.git")
 
     # Recipe Step 3: Determine the greatest-common-version target (from the now-current clones).
