@@ -14,7 +14,7 @@ Patching a binary cannot occur while an active Claude Code session holds the exe
 Run the preparer to run preflight checks (Node 20+, disk space, running processes), check version catalog alignment, sync git repositories, build patchers, populate system reminders, and generate the external apply script:
 
 ```bash
-python scripts/install.py --prepare
+python skills/tweakcc-update/scripts/install.py --prepare
 ```
 
 ### Stage 2: Apply Binary Patches (Outside active Claude Code session)
@@ -26,14 +26,14 @@ Run the generated external script with all Claude Code terminal and editor sessi
 Or invoke the installer directly in an external shell:
 
 ```bash
-python scripts/install.py --apply
+python skills/tweakcc-update/scripts/install.py --apply
 ```
 
 ### Stage 3: Verification
 Confirm that dual version lines and sentinels for all three content sources are present in the installed binary:
 
 ```bash
-python scripts/verify.py
+python skills/tweakcc-update/scripts/verify.py
 ```
 
 ## Highlights
@@ -45,12 +45,12 @@ python scripts/verify.py
 
 ## Command Reference
 
-- `python scripts/install.py --prepare`: Syncs the patcher repositories (`unnerfcc` and `lobotomized-claude-code` fast-forward to their remotes; `tweakcc-fixed` is pinned to v2.7.38 so it matches the target binary format; a stale version-source clone stops the run), records the target Claude Code version to `~/.tweakcc-gilligan/target_version.txt`, populates system reminders, builds binaries, and generates the external apply script.
-- `python scripts/install.py --apply`: Resets Claude Code to the version prepare recorded (it refuses to run without that record), then applies tweakcc-fixed and unnerfcc patches to the installed binary.
-- `python scripts/verify.py`: Confirms dual version output (`claude --version`) and verifies markers from all three content sources in the executable.
-- `python scripts/check_version_intersection.py`: Reads the local catalog clones (falling back to GitHub) and npm to find the greatest common supported release.
-- `python scripts/install.py --clean-backup`: Removes poisoned tweakcc backup files if needed.
-- `python scripts/test_termination_contract.py`: Runs the black-box suite pinning the scripts' termination contract (`--max-seconds` ceiling, exit codes 0/1/2/3).
+- `python skills/tweakcc-update/scripts/install.py --prepare`: Syncs the patcher repositories (`unnerfcc` and `lobotomized-claude-code` fast-forward to their remotes; `tweakcc-fixed` is pinned to v2.7.38 so it matches the target binary format; a stale version-source clone stops the run), records the target Claude Code version to `~/.tweakcc-gilligan/target_version.txt`, populates system reminders, builds binaries, and generates the external apply script.
+- `python skills/tweakcc-update/scripts/install.py --apply`: Resets Claude Code to the version prepare recorded (it refuses to run without that record), then applies tweakcc-fixed and unnerfcc patches to the installed binary.
+- `python skills/tweakcc-update/scripts/verify.py`: Confirms dual version output (`claude --version`) and verifies markers from all three content sources in the executable.
+- `python skills/tweakcc-update/scripts/check_version_intersection.py`: Reads the local catalog clones (falling back to GitHub) and npm to find the greatest common supported release.
+- `python skills/tweakcc-update/scripts/install.py --clean-backup`: Removes poisoned tweakcc backup files if needed.
+- `python skills/tweakcc-update/scripts/test_termination_contract.py`: Runs the black-box suite pinning the scripts' termination contract (`--max-seconds` ceiling, exit codes 0/1/2/3).
 
 ## Resetting to Stock
 
