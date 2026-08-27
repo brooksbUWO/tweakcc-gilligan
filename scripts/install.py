@@ -243,7 +243,16 @@ def preflight_checks(require_no_claude=True):
 
 # --- Git Repo Helpers --------------------------------------------------------
 
-def ensure_repo(repo_name, git_url, branch=None, version_source=False):
+def ensure_repo(repo_name, git_url, branch=None, version_source=False, pin_ref=None):
+    # pin_ref pins the repo to an exact commit/tag and DISABLES the
+    # fast-forward-to-remote step. tweakcc-fixed 2.8.0 rewrote its binary
+    # extractor for the CC 2.1.246 code-split Bun format and dropped the
+    # single-module format that CC 2.1.235 (the unnerfcc-capped target) uses,
+    # so its extractor throws "claude module not found in any of the binary
+    # modules" on a 2.1.235 binary. v2.7.38 (2dc353c) is the last pre-code-split
+    # release; it patches the 2.1.235 binary and still ships the 2.1.235 prompt
+    # catalog. Pinning here keeps prepare from advancing tweakcc-fixed past the
+    # binary format the target actually uses.
     REPOS_DIR.mkdir(parents=True, exist_ok=True)
     target = REPOS_DIR / repo_name
     if not target.exists() or not (target / ".git").exists():
@@ -255,6 +264,43 @@ def ensure_repo(repo_name, git_url, branch=None, version_source=False):
             cmd.extend(["-b", branch])
         cmd.extend([git_url, str(target)])
         run_cmd(cmd, timeout=300)
+        if pin_ref:
+            # reset --hard, not just checkout: force the worktree to exactly the
+            # pinned commit. A bare checkout onto a dirty tree leaves local edits
+            # in place, so the build would compile non-pinned source while
+            # `rev-parse HEAD` still reports the pinned ref (a silent divergence
+            # on a version_source repo). Fresh clone is clean here, but reset is
+            # kept for symmetry with the existing-clone path and defence in depth.
+            try:
+                run_cmd(["git", "-C", str(target), "checkout", pin_ref], timeout=30)
+                run_cmd(["git", "-C", str(target), "reset", "--hard", pin_ref], timeout=30)
+                log(f"  [OK] {repo_name} pinned to {pin_ref}")
+            except Exception as e:
+                die(f"Could not pin freshly cloned {repo_name} to {pin_ref} ({e}).",
+                    f"Delete {target} and re-run --prepare to get a fresh clone at {pin_ref}.")
+    elif pin_ref:
+        # Existing clone with a pin: fetch so the ref is present, then
+        # hard-reset the worktree to the pinned commit/tag. Deliberately NO
+        # fast-forward-to-remote: advancing to origin HEAD is exactly what the
+        # pin prevents (it would drag tweakcc-fixed back to 2.8.0 and reintroduce
+        # the 2.1.246-only extractor).
+        log(f"Updating {repo_name} (pinned to {pin_ref})...")
+        try:
+            run_cmd(["git", "-C", str(target), "fetch", "origin", "--tags"], timeout=60)
+        except Exception as e:
+            log(f"  [WARN] fetch failed for pinned {repo_name} ({e}); using existing objects.")
+        try:
+            run_cmd(["git", "-C", str(target), "checkout", pin_ref], timeout=30)
+            # reset --hard forces the worktree to the pinned commit even when the
+            # clone is already ON that commit but DIRTY. An install run leaves
+            # CRLF/LF churn in tracked files (documented in CLAUDE.md), so a bare
+            # checkout would build modified source while the logs and rev-parse
+            # HEAD both report the pinned ref. reset --hard makes the pin exact.
+            run_cmd(["git", "-C", str(target), "reset", "--hard", pin_ref], timeout=30)
+            log(f"  [OK] {repo_name} pinned to {pin_ref}")
+        except Exception as e:
+            die(f"Could not pin {repo_name} to {pin_ref} ({e}).",
+                f"Delete {target} and re-run --prepare to get a fresh clone at {pin_ref}.")
     else:
         log(f"Updating {repo_name}...")
         try:
@@ -414,8 +460,12 @@ def prepare_stage():
     # so computing it before the sync would record a target from stale clones
     # (observed: a 143-commit-stale tweakcc-fixed pinned the target at an old
     # version while newer catalogs sat unfetched).
-    tweakcc_repo, twk_sha = ensure_repo("tweakcc-fixed", "https://github.com/skrabe/tweakcc-fixed.git", version_source=True)
-    unnerf_repo, unf_sha = ensure_repo("unnerfcc", "https://github.com/brooksbUWO/unnerfcc.git", branch="windows-pe-support-2", version_source=True)
+    # Pin tweakcc-fixed to v2.7.38 (2dc353c): the last release before the 2.8.0
+    # code-split rewrite, which dropped patch support for the CC 2.1.235
+    # single-module binary format the target uses. See ensure_repo's pin_ref
+    # comment and SKILL.md "tweakcc-fixed binary-format compatibility".
+    tweakcc_repo, twk_sha = ensure_repo("tweakcc-fixed", "https://github.com/skrabe/tweakcc-fixed.git", version_source=True, pin_ref="2dc353c")
+    unnerf_repo, unf_sha = ensure_repo("unnerfcc", "https://github.com/brooksbUWO/unnerfcc.git", branch="main", version_source=True)
     lcc_repo, lcc_sha = ensure_repo("lobotomized-claude-code", "https://github.com/skrabe/lobotomized-claude-code.git")
 
     # Recipe Step 3: Determine the greatest-common-version target (from the now-current clones).
@@ -444,15 +494,22 @@ def prepare_stage():
     target_version_file.write_text(greatest_common_version, encoding="utf-8")
     log(f"  [OK] Recorded target version @{greatest_common_version} for apply stage")
 
-    # Build tweakcc-fixed if needed
+    # Build tweakcc-fixed. ALWAYS rebuild, never gate on dist/ existing: dist/
+    # is gitignored, so a checkout/fast-forward/pin that changes src/ leaves a
+    # stale dist/ in place. The old "if not dist_mjs.exists()" gate then ran the
+    # leftover build from the PREVIOUS source (e.g. a 2.8.0 dist over pinned
+    # v2.7.38 source), silently defeating the pin. Deleting dist/ forces the
+    # build to reflect the currently checked-out source.
     dist_mjs = tweakcc_repo / "dist" / "index.mjs"
+    dist_dir = tweakcc_repo / "dist"
+    log("Building tweakcc-fixed (from current checkout)...")
+    if dist_dir.exists():
+        shutil.rmtree(dist_dir, ignore_errors=True)
+    pnpm = shutil.which("pnpm") or "pnpm"
+    run_cmd([pnpm, "install"], cwd=str(tweakcc_repo), timeout=300, shell=(sys.platform == "win32"))
+    run_cmd([pnpm, "build"], cwd=str(tweakcc_repo), timeout=180, shell=(sys.platform == "win32"))
     if not dist_mjs.exists():
-        log("Building tweakcc-fixed...")
-        pnpm = shutil.which("pnpm") or "pnpm"
-        run_cmd([pnpm, "install"], cwd=str(tweakcc_repo), timeout=300, shell=(sys.platform == "win32"))
-        run_cmd([pnpm, "build"], cwd=str(tweakcc_repo), timeout=180, shell=(sys.platform == "win32"))
-        if not dist_mjs.exists():
-            die("Failed to build tweakcc-fixed (dist/index.mjs missing).", "Check pnpm build output in logs.")
+        die("Failed to build tweakcc-fixed (dist/index.mjs missing).", "Check pnpm build output in logs.")
 
     # Populate system-reminders from LCC repo
     log("Populating system-reminders directory in real HOME...")
@@ -494,8 +551,9 @@ def prepare_stage():
     # Generate External Apply Script (to respect hard session boundary)
     install_py_path = pathlib.Path(__file__).resolve().as_posix()
     verify_py_path = (pathlib.Path(__file__).resolve().parent / "verify.py").as_posix()
-    bat_script = GILLIGAN_DIR / "apply-external.bat"
-    bat_content = f"""@echo off
+    if sys.platform == "win32":
+        ext_script = GILLIGAN_DIR / "apply-external.bat"
+        script_content = f"""@echo off
 echo === Applying tweakcc-fixed and unnerfcc Patches ===
 echo Please ensure all Claude Code sessions are closed!
 pause
@@ -514,23 +572,22 @@ if errorlevel 1 (
 echo === Patches Applied and Verified Successfully! ===
 pause
 """
-    bat_script.write_text(bat_content, encoding="utf-8")
-    log(f"  [OK] Generated external apply script: {bat_script}")
-
-    sh_script = GILLIGAN_DIR / "apply-external.sh"
-    sh_content = f"""#!/usr/bin/env bash
+        ext_script.write_text(script_content, encoding="utf-8")
+        log(f"  [OK] Generated external apply script: {ext_script}")
+    else:
+        ext_script = GILLIGAN_DIR / "apply-external.sh"
+        script_content = f"""#!/usr/bin/env bash
 set -e
 echo "=== Applying tweakcc-fixed and unnerfcc Patches ==="
 python3 "{install_py_path}" --apply
 python3 "{verify_py_path}"
 echo "=== Patches Applied and Verified Successfully! ==="
 """
-    sh_script.write_text(sh_content, encoding="utf-8")
-    sh_script.chmod(0o755)
-    log(f"  [OK] Generated external apply script: {sh_script}")
+        ext_script.write_text(script_content, encoding="utf-8")
+        ext_script.chmod(0o755)
+        log(f"  [OK] Generated external apply script: {ext_script}")
 
     log("\n=== Stage 1 Complete ===")
-    ext_script = bat_script if sys.platform == "win32" else sh_script
     log(f"To complete patching outside Claude Code, run: {ext_script}")
 
 def apply_stage():

@@ -95,10 +95,10 @@ def get_unnerfcc_versions():
 
     # Fallback to GitHub API on brooksbUWO/unnerfcc PE branch
     try:
-        data = fetch_json("https://api.github.com/repos/brooksbUWO/unnerfcc/contents/data/prompts?ref=windows-pe-support-2")
+        data = fetch_json("https://api.github.com/repos/brooksbUWO/unnerfcc/contents/data/prompts?ref=main")
         return parse_versions([item["name"] for item in data if isinstance(item, dict) and "name" in item])
     except Exception as e:
-        sys.stderr.write(f"ERROR: Failed to fetch unnerfcc catalogs from brooksbUWO/unnerfcc (ref=windows-pe-support-2): {e}\n")
+        sys.stderr.write(f"ERROR: Failed to fetch unnerfcc catalogs from brooksbUWO/unnerfcc (ref=main): {e}\n")
         return None
 
 def main():
