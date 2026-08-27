@@ -363,7 +363,7 @@ def ensure_repo(repo_name, git_url, branch=None, version_source=False, pin_ref=N
     # compare the newest "sync to Claude Code vX.Y.Z" commit subject upstream
     # against the newest one reachable from the local HEAD. The author ships
     # syncs as commits without releases, so commit subjects are the version
-    # truth; a gap here means the tracked fork/branch needs updating and no
+    # truth; a gap here means the tracked branch needs updating and no
     # amount of re-running prepare can see past it.
     probe = UPSTREAM_PROBES.get(repo_name)
     if probe:
@@ -395,7 +395,7 @@ def ensure_repo(repo_name, git_url, branch=None, version_source=False, pin_ref=N
             if up_ver and local_ver and semver_key(up_ver) > semver_key(local_ver):
                 log(f"  [WARN] {repo_name}: real upstream ({upstream_url}) has synced to "
                     f"Claude Code v{up_ver} (per commit subjects), but the tracked branch "
-                    f"supports only v{local_ver}. The tracked fork/branch needs updating "
+                    f"supports only v{local_ver}. The tracked branch needs updating "
                     f"before newer Claude Code versions can be targeted.")
             elif up_ver and local_ver and semver_key(local_ver) > semver_key(up_ver):
                 log(f"  [OK] {repo_name}: tracked branch (v{local_ver}) is AHEAD of the real "

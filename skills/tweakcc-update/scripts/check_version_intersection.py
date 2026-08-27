@@ -57,10 +57,15 @@ def get_tweakcc_versions():
     # Check local clone first
     script_dir = pathlib.Path(__file__).resolve().parent
     gilligan_home = pathlib.Path(os.environ.get("TWEAKCC_GILLIGAN_HOME") or pathlib.Path.home())
+    # The installer clones tweakcc-fixed into the runtime workspace
+    # (~/.tweakcc-gilligan/repos/tweakcc-fixed), PINNED to v2.7.38 (2dc353c).
+    # Read that pinned clone's catalog so the intersection reflects the version
+    # the patcher can actually apply. The GitHub API fallback below reads the
+    # UNPINNED (latest) tweakcc-fixed catalog, which lists code-split versions
+    # the pinned v2.7.38 extractor cannot patch; run --prepare first so the
+    # pinned clone exists and this local path is used.
     candidate_dirs = [
-        script_dir.parent / "repos" / "tweakcc-fixed" / "data" / "prompts",
         gilligan_home / ".tweakcc-gilligan" / "repos" / "tweakcc-fixed" / "data" / "prompts",
-        script_dir.parent.parent / "repos" / "tweakcc-fixed" / "data" / "prompts",
     ]
     for local_dir in candidate_dirs:
         if local_dir.exists():
@@ -80,12 +85,12 @@ def get_unnerfcc_versions():
     # Check local clone first
     script_dir = pathlib.Path(__file__).resolve().parent
     gilligan_home = pathlib.Path(os.environ.get("TWEAKCC_GILLIGAN_HOME") or pathlib.Path.home())
+    # The installer clones unnerfcc into the runtime workspace
+    # (~/.tweakcc-gilligan/repos/unnerfcc); that is the only local catalog
+    # source. If it is absent (a fresh run before prepare), fall through to the
+    # GitHub API below.
     candidate_dirs = [
-        script_dir.parent / "repos" / "unnerfcc" / "data" / "prompts",
-        script_dir.parent / "repos" / "unnerfcc-pr" / "data" / "prompts",
         gilligan_home / ".tweakcc-gilligan" / "repos" / "unnerfcc" / "data" / "prompts",
-        script_dir.parent.parent / "repos" / "unnerfcc" / "data" / "prompts",
-        script_dir.parent.parent / "repos" / "unnerfcc-pr" / "data" / "prompts",
     ]
     for local_dir in candidate_dirs:
         if local_dir.exists():

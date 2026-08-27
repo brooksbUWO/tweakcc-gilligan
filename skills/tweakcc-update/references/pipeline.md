@@ -1,0 +1,43 @@
+# Update pipeline: extract to verified apply
+
+A Claude Code version update is a new GSD milestone. Run `/gsd-new-milestone` to create the phase set, then plan and execute each phase in order with `/gsd-plan-phase <N>` and `/gsd-execute-phase <N>`, where `<N>` is the number the milestone assigned. `gsd-verifier` gates each phase against its success criteria; a phase reaches `[x]` only on a `passed` verdict. The seven gates below are the success criteria the phases carry.
+
+## The seven gates
+
+| Gate | Phase role | Script | Passes only when |
+|---|---|---|---|
+| G0 Sync | pre-phase sync | `unnerfcc/engine/extract-prompts.mjs` (via `upgrade.sh`) | new stock corpus extracted from the binary; checksum diff of changed/added/removed prompts recorded |
+| G1 Categorize | categorization phase | `.claude/workspace/scripts/verify-corpus-coverage.sh` | coverage script exits 0 (every corpus file mapped to one batch or the exclusion list) |
+| G2 Remediate | remediation phase | `.claude/workspace/scripts/per-batch-remediation/ste_gate.py --revision-dir <rev>` per batch | `ste_gate.py` exits 0 for EVERY batch; Codex review clean; user approval recorded, seal digest matches |
+| G3 Encode | encoding phase | `encode_rules.py --all --emit`, then `check_encode_coverage.py` | encoder gates pass (no digest drift); every non-retain rewrite has a rule (coverage check exits 0) |
+| G4 Reanchor | encoding phase | `reanchor_engine.py`, `apply-unnerfs.py --check` | `apply_unnerfs_check` reports 0 FAILED / 0 MISSING against the genuine binary |
+| G5 Apply | encoding phase | `install.py --prepare`; close CC; `apply-external.bat`; `verify.py` | dual version lines print; three content sentinels present |
+| G6 Behavioral verify | verification phase | per-batch spot-check in a fresh session | each applied batch shows the un-nerfed text and no stock text |
+
+## Version and format constraints
+
+The target version is `min(unnerfcc newest catalog, tweakcc-fixed newest catalog)`, computed by `check_version_intersection.py`. `unnerfcc` is the usual cap.
+
+The checked-out `tweakcc-fixed` commit must match the target binary format:
+
+- Target 2.1.241 or less (OLD single-module Bun format): `tweakcc-fixed` at `2dc353c` (v2.7.38) or earlier.
+- Target 2.1.246 or more (CODE-SPLIT Bun format): `tweakcc-fixed` at `890c928` or later.
+
+`prepare_stage` pins `tweakcc-fixed` to `2dc353c` via `pin_ref`. Do not remove the pin until `unnerfcc` supports 2.1.246.
+
+## Prompt source
+
+`unnerfcc/engine/extract-prompts.mjs` extracts the stock prompt corpus from each Claude Code binary. The un-nerf rules are this project's own rewrites, encoded in `unnerfcc/scripts/apply-unnerfs.py`. `lukehutch/unnerfcc` is an optional upstream-sync signal, not a prompt source; its PRs were rejected, so prompt updates come from self-extraction, not from copying upstream prompts.
+
+## One clone per repo
+
+`unnerfcc` has one dev copy at `D:/Data/Programs/AI/Claude/Projects/tweakcc/unnerfcc`, tracking `brooksbUWO/unnerfcc`. The installer clones repos fresh into `~/.tweakcc-gilligan/repos/` on every prepare; those clones are disposable and must not be hand-edited. Never create a second copy, snapshot, branch-named directory, or zip of a repo. The encode and reanchor tooling reads the single dev copy; a duplicate lets edits land in one copy and get committed from another.
+
+## When a gate does not pass
+
+Each gate must pass before the next phase runs. A gate that fails means the phase is not done: `gsd-verifier` returns a non-`passed` verdict, the phase stays open, and GSD re-plans and re-executes it within the same phase until the verifier passes. Never edit a recorded seal digest, skip a batch, or mark a phase complete to move past a red gate.
+
+Two failure kinds have a specific fix inside their phase:
+
+- STE failure or seal-digest drift in a batch: the sealed before/after bodies were modified after approval or do not match the binary-faithful store. Re-derive them against the regenerated store, re-seal, re-approve.
+- A rule diverging from the genuine binary (reanchor FAILED/MISSING): re-derive it against the regenerated store. An opaque-hoist dead-end the slot-preserving splicer cannot deliver is dispositioned at plan level (drop the rule or use a different override channel) and recorded as a waiver, never silently skipped.
