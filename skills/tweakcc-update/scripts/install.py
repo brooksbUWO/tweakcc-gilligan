@@ -494,6 +494,55 @@ def prepare_stage():
     target_version_file.write_text(greatest_common_version, encoding="utf-8")
     log(f"  [OK] Recorded target version @{greatest_common_version} for apply stage")
 
+    # Pre-flight rule-set drift check. install.sh runs apply-unnerfs --check at
+    # APPLY time (external, all sessions closed); a single stale rule there aborts
+    # the whole apply before the binary splice, so a fresh correct fix reaches
+    # nothing and the user round-trips back into a session to fix it. Run the same
+    # sync + full-set --check HERE, inside the session, so any drifted stock
+    # (e.g. a bare ${} that a new CC version renamed to a named placeholder) fails
+    # prepare loudly with apply-unnerfs's own drift diagnosis, cheap to fix, before
+    # the external run. Uses the same bash the apply uses so the check sees exactly
+    # what the apply will splice.
+    log("Pre-flight: syncing system-prompts and checking the full rule set for stock drift...")
+    bash_exe = find_bash_executable()
+    if bash_exe is None:
+        die("bash not found; cannot run the pre-flight rule-set check.",
+            "Install Git for Windows (bash) or ensure bash is on PATH, then re-run --prepare.")
+    bash_exe = str(bash_exe)  # find_bash_executable returns a Path; run_cmd joins the list to log it
+    sync_mjs = (unnerf_repo / "scripts" / "sync-version.mjs").as_posix()
+    apply_py = (unnerf_repo / "scripts" / "apply-unnerfs.py").as_posix()
+    # Mirror install.sh's own sequence (sync -> apply -> check): --check alone
+    # exits 1 on a FRESH sync because every rule "would change" (not-yet-applied),
+    # which is not drift. Applying first, THEN checking, isolates true drift: a
+    # stale-stock rule reports FAILED (exit 1) while a clean set exits 0.
+    preflight_cmd = (
+        f"cd '{unnerf_repo.as_posix()}' && "
+        f"node '{sync_mjs}' '{greatest_common_version}' && "
+        f"python3 '{apply_py}' --quiet && "
+        f"python3 '{apply_py}' --check --quiet"
+    )
+    try:
+        # -lc (login shell) is required, not -c: the login shell sources the
+        # Git-Bash profile that puts node and python3 on PATH. A change to -c
+        # would break their resolution and misfire this block as a phantom sync
+        # error. This matches the apply stage's own bash invocation.
+        run_cmd([bash_exe, "-lc", preflight_cmd])
+        log("  [OK] Rule-set pre-flight check clean (0 FAILED); no stale stock.")
+    except Exception as e:
+        # The compound command can fail for drift (a rule's stock no longer
+        # byte-matches the store -> apply-unnerfs reports FAILED) OR for a
+        # non-drift reason (sync-version.mjs download/dep error, a timeout).
+        # {e} is only the CalledProcessError summary; run_cmd already logged the
+        # sub-process STDOUT/STDERR above, so point the user there and let the
+        # reported FAILED-rule count, not this message, decide the remediation.
+        die(f"Pre-flight sync+apply+check failed ({e}). See the sub-process output logged above "
+            f"for the real cause against the {greatest_common_version} store.",
+            "If the output above shows one or more FAILED rules, re-anchor each FAILED rule's stock "
+            "in unnerfcc/scripts/apply-unnerfs.py to the current store body, commit and push, then "
+            "re-run --prepare. If it shows a sync or dependency error instead (not a FAILED rule), "
+            "fix that error and re-run --prepare. Do not run the external apply until this check is "
+            "clean: install.sh aborts the whole apply on any FAILED rule.")
+
     # Build tweakcc-fixed. ALWAYS rebuild, never gate on dist/ existing: dist/
     # is gitignored, so a checkout/fast-forward/pin that changes src/ leaves a
     # stale dist/ in place. The old "if not dist_mjs.exists()" gate then ran the
