@@ -515,8 +515,12 @@ def prepare_stage():
     # exits 1 on a FRESH sync because every rule "would change" (not-yet-applied),
     # which is not drift. Applying first, THEN checking, isolates true drift: a
     # stale-stock rule reports FAILED (exit 1) while a clean set exits 0.
+    # A fresh clone has no node_modules; sync-version.mjs imports gray-matter
+    # and dies with ERR_MODULE_NOT_FOUND without it. Install the declared
+    # dependencies once, inside the same login shell that resolves node/npm.
     preflight_cmd = (
         f"cd '{unnerf_repo.as_posix()}' && "
+        f"if [ ! -d node_modules ]; then npm install --no-audit --no-fund; fi && "
         f"node '{sync_mjs}' '{greatest_common_version}' && "
         f"python3 '{apply_py}' --quiet && "
         f"python3 '{apply_py}' --check --quiet"

@@ -10,7 +10,7 @@ A Claude Code version update is a new GSD milestone. Run `/gsd-new-milestone` to
 | G1 Categorize | categorization phase | `.claude/workspace/scripts/verify-corpus-coverage.sh` | coverage script exits 0 (every corpus file mapped to one batch or the exclusion list) |
 | G2 Remediate | remediation phase | `.claude/workspace/scripts/per-batch-remediation/ste_gate.py --revision-dir <rev>` per batch | `ste_gate.py` exits 0 for EVERY batch; Codex review clean; user approval recorded, seal digest matches |
 | G3 Encode | encoding phase | `encode_rules.py --all --emit`, then `check_encode_coverage.py` | encoder gates pass (no digest drift); every non-retain rewrite has a rule (coverage check exits 0) |
-| G4 Reanchor | encoding phase | `reanchor_engine.py`, `apply-unnerfs.py --check` | `apply_unnerfs_check` reports 0 FAILED / 0 MISSING against the genuine binary |
+| G4 Reanchor | encoding phase | `.claude/workspace/scripts/alignment-gate/alignment_gate.py`, then `reanchor_engine.py`, `apply-unnerfs.py --check` | alignment gate exits 0 (no STALE-ANCHOR, and no UNEXPLAINED-DIFF when a live extract is supplied via `--live`), then `apply_unnerfs_check` reports 0 FAILED / 0 MISSING against the genuine binary |
 | G5 Apply | encoding phase | `install.py --prepare`; close CC; `apply-external.bat`; `verify.py` | dual version lines print; three content sentinels present |
 | G6 Behavioral verify | verification phase | per-batch spot-check in a fresh session | each applied batch shows the un-nerfed text and no stock text |
 
@@ -41,3 +41,7 @@ Two failure kinds have a specific fix inside their phase:
 
 - STE failure or seal-digest drift in a batch: the sealed before/after bodies were modified after approval or do not match the binary-faithful store. Re-derive them against the regenerated store, re-seal, re-approve.
 - A rule diverging from the genuine binary (reanchor FAILED/MISSING): re-derive it against the regenerated store. An opaque-hoist dead-end the slot-preserving splicer cannot deliver is dispositioned at plan level (drop the rule or use a different override channel) and recorded as a waiver, never silently skipped.
+
+## The alignment gate (runs inside G4, before reanchor)
+
+`.claude/workspace/scripts/alignment-gate/alignment_gate.py` compares, per governed row of the concept map, the stock store body, the un-nerf rules for that slug, and (with `--live <dir>`) a live-extracted body. Produce the rules dump with `python unnerfcc/scripts/apply-unnerfs.py --dump-rules <path>`. Verdicts: `STALE-ANCHOR` (a rule's stock string no longer byte-matches the store: the splicer would silently skip it), `RULE-NOT-APPLIED` (live still equals stock although a rule targets the slug), `UNEXPLAINED-DIFF` (live matches neither stock nor stock-plus-rules: drift). Any failure exits 1 and blocks reanchor. Two-way mode (no `--live`) checks anchoring only and says so loudly; it does not prove the live binary.

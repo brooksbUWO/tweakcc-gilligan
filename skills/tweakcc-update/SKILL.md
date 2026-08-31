@@ -2,8 +2,9 @@
 name: tweakcc-update
 description: "Use when installing, applying, re-applying, or updating the tweakcc-fixed and unnerfcc patches to Claude Code, or when the user says \"tweakcc\", \"unnerfcc\", \"un-nerf Claude Code\", \"patch Claude Code\", \"apply-external.bat\", \"tweakcc-gilligan\", or reports the apply failing with errors like \"claude module not found in any of the binary modules\" or a BUN_FORMAT_INCOMPATIBLE / struct-size ambiguity. Also use to reset Claude Code to a stock version before patching. Scoped to this project."
 license: MIT
+allowed-tools: Bash(python ${CLAUDE_SKILL_DIR}/scripts/*)
 metadata:
-  version: 1.1.0
+  version: 1.2.0
 ---
 
 # tweakcc-gilligan: Dual-Patcher Skill for Claude Code
@@ -31,7 +32,7 @@ tweakcc-gilligan patches Claude Code binaries on Windows, Linux, and macOS in tw
 
 ## Full update pipeline (new CC version)
 
-A new CC version is a new milestone. Run `/gsd-new-milestone` to create a fresh phase set; do not re-run a prior milestone's phase numbers. Dispatch the GSD skills and let `gsd-verifier` gate each phase. Do not write ROADMAP or STATE checkboxes; a phase reaches `[x]` only on a `passed` verdict. Read [references/pipeline.md](references/pipeline.md) for the full step detail and [references/gates.md](references/gates.md) for the gate definitions.
+A new CC version is a new milestone. Run `/gsd-new-milestone` to create a fresh phase set; do not re-run a prior milestone's phase numbers. Dispatch the GSD skills and let `gsd-verifier` gate each phase. Do not write ROADMAP or STATE checkboxes; a phase reaches `[x]` only on a `passed` verdict. Read [references/pipeline.md](references/pipeline.md) for the full step detail and [references/gates.md](references/gates.md) for the gate definitions. For the remediation phase's concept-to-prompt mapping dispatches, use the proven template at [references/concept-map-dispatch-prompt.md](references/concept-map-dispatch-prompt.md).
 
 The milestone's phases carry these seven gates (phase numbers are whatever `/gsd-new-milestone` assigns):
 
@@ -41,7 +42,7 @@ The milestone's phases carry these seven gates (phase numbers are whatever `/gsd
 | G1 Categorize | plan then execute the categorization phase | `verify-corpus-coverage.sh` exits 0 |
 | G2 Remediate | plan then execute the remediation phase | `ste_gate.py` exits 0 for EVERY batch; approvals sealed |
 | G3 Encode | plan then execute the encoding phase; `encode_rules.py --all --emit` | `check_encode_coverage.py` exits 0 (every non-retain rewrite has a rule) |
-| G4 Reanchor | reanchor against the regenerated store | `apply-unnerfs.py --check` reports 0 FAILED / 0 MISSING |
+| G4 Reanchor | run the alignment gate, then reanchor against the regenerated store | alignment gate exits 0, then `apply-unnerfs.py --check` reports 0 FAILED / 0 MISSING |
 | G5 Apply | `install.py --prepare`; close CC; `apply-external.bat`; `verify.py` | dual version lines + three content sentinels |
 | G6 Behavioral verify | plan then execute the verification phase | each applied batch shows un-nerfed text, no stock text |
 
