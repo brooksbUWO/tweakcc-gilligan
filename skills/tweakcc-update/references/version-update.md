@@ -115,6 +115,9 @@ separate Remediation job in SKILL.md; never mix the two.
      unnerfcc runs. It reports `[LOST] <id>: couldNotFind` and install.py aborts the apply
      on that marker. Remove the rule, reset its `.md` body to stock, and leave a
      "NO RULE" comment in the catalog naming the override file (four such cases exist).
+     `install.py --prepare` intersects the rule ids with every `shadows:` list in the LCC
+     `system-reminders/` and refuses to generate the apply script on any overlap
+     (skill 1.4.2; the 2.1.258 apply of 2026-09-01 lost one rule this way).
 4. **Revalidate the derived artifacts against the new version.** The re-anchor step only
    touches rule-bearing files. The prompt store round and the concept map are keyed to the
    PREVIOUS extraction and drift silently unless this step runs (2026-09-01: after the

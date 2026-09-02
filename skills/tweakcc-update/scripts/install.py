@@ -644,6 +644,36 @@ def prepare_stage():
     else:
         log("  Warning: LCC system-reminders directory not found.")
 
+    # Refuse any un-nerf rule whose surface an override SHADOWS. tweakcc-fixed
+    # applies the override first, so the rule's stock text is gone from the
+    # bundle before unnerfcc runs; the external apply then reports
+    # "[LOST] <id>: couldNotFind" and aborts (2026-09-01: the
+    # system-reminder-task-tools-reminder rule did exactly this on 2.1.258).
+    # The store-based --check above cannot see it (the store still holds the
+    # stock text), so intersect the rule ids with the `shadows:` lists here.
+    log("Pre-flight: checking that no un-nerf rule targets a surface an override shadows...")
+    shadowed = set()
+    for md_file in sorted(lcc_reminders.glob("*.md")) if lcc_reminders.exists() else []:
+        m = re.search(r"^shadows:\s*\n((?:[ \t]+-[ \t]*\S+[ \t]*\n)+)",
+                      md_file.read_text(encoding="utf-8"), re.M)
+        if m:
+            shadowed.update(x.strip().lstrip("-").strip() for x in m.group(1).splitlines())
+    rules_dump = GILLIGAN_DIR / "logs" / "rules-dump.json"
+    run_cmd([bash_exe, "-lc", f"python3 '{apply_py}' --dump-rules '{rules_dump.as_posix()}'"])
+    try:
+        rule_ids = {r["id"] for r in json.loads(rules_dump.read_text(encoding="utf-8"))}
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        die(f"Cannot read the rules dump at {rules_dump} ({e}).",
+            "apply-unnerfs.py --dump-rules must write a JSON list of {id, stock, unnerf}; fix that first.")
+    clash = sorted(rule_ids & shadowed)
+    if clash:
+        die(f"{len(clash)} un-nerf rule(s) target a surface that a system-reminder override shadows: "
+            f"{', '.join(clash)}. The external apply would report [LOST] couldNotFind for each.",
+            "Remove each named rule from unnerfcc/scripts/apply-unnerfs.py, reset its .md to stock, "
+            "leave a NO RULE comment naming the override, commit and push, then re-run --prepare. "
+            "Carry the change in the override file instead (SKILL.md runbook, shadowed rules).")
+    log(f"  [OK] {len(rule_ids)} rule ids, {len(shadowed)} shadowed surfaces, no overlap.")
+
     # Configure tweakcc Installation Path
     launcher = shutil.which("claude")
     if not launcher:
