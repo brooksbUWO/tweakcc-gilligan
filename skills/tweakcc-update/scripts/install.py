@@ -258,9 +258,9 @@ def ensure_repo(repo_name, git_url, branch=None, version_source=False, pin_ref=N
     # fast-forward-to-remote step. Each tweakcc-fixed release patches ONE Bun
     # binary format (2.8.0+ = the CC 2.1.246+ code-split format; v2.7.38 and
     # earlier = the old single-module format). A mismatch throws "claude module
-    # not found in any of the binary modules". 29cba74 ("prompts: catalogue CC
-    # 2.1.257") carries the code-split extractor (890c928) plus the 2.1.257
-    # prompt catalog and patch re-anchors, matching the 2.1.257 target. Pinning
+    # not found in any of the binary modules". 452f15a ("prompts: catalogue CC
+    # 2.1.258") carries the code-split extractor (890c928) plus the 2.1.258
+    # prompt catalog and patch re-anchors, matching the 2.1.258 target. Pinning
     # here keeps prepare from advancing tweakcc-fixed past the binary format
     # the target actually uses.
     REPOS_DIR.mkdir(parents=True, exist_ok=True)
@@ -316,6 +316,23 @@ def ensure_repo(repo_name, git_url, branch=None, version_source=False, pin_ref=N
         try:
             run_cmd(["git", "-C", str(target), "fetch", "origin"], timeout=30)
             target_branch = branch or "main"
+            # The runtime clone is disposable (source is edited only in its
+            # dev location). The pre-flight below rewrites tracked files in
+            # it (sync-version + apply-unnerfs replay), so a dirty worktree is
+            # the normal state on the next run; discard it before the
+            # fast-forward instead of failing on it.
+            # A run interrupted mid-git leaves .git/index.lock behind; nothing
+            # else runs git in this disposable clone, so the lock is stale.
+            stale_lock = target / ".git" / "index.lock"
+            if stale_lock.exists():
+                stale_lock.unlink()
+                log(f"  [OK] {repo_name}: removed stale .git/index.lock")
+            dirty = run_cmd(["git", "-C", str(target), "status", "--porcelain"], timeout=30).strip()
+            if dirty:
+                run_cmd(["git", "-C", str(target), "checkout", "-q", "--", "."], timeout=60)
+                run_cmd(["git", "-C", str(target), "clean", "-fdq"], timeout=60)
+                log(f"  [OK] {repo_name}: discarded local replay output in the runtime clone "
+                    f"({len(dirty.splitlines())} path(s))")
             try:
                 run_cmd(["git", "-C", str(target), "checkout", target_branch], timeout=30)
             except Exception:
@@ -470,11 +487,11 @@ def prepare_stage():
     # so computing it before the sync would record a target from stale clones
     # (observed: a 143-commit-stale tweakcc-fixed pinned the target at an old
     # version while newer catalogs sat unfetched).
-    # Pin tweakcc-fixed to 29cba74 ("prompts: catalogue CC 2.1.257"): the
-    # code-split extractor (CC 2.1.246+ format) with the 2.1.257 catalog and
-    # patch re-anchors, matching the 2.1.257 target. See ensure_repo's pin_ref
+    # Pin tweakcc-fixed to 452f15a ("prompts: catalogue CC 2.1.258"): the
+    # code-split extractor (CC 2.1.246+ format) with the 2.1.258 catalog and
+    # patch re-anchors, matching the 2.1.258 target. See ensure_repo's pin_ref
     # comment and SKILL.md "tweakcc-fixed binary-format compatibility".
-    tweakcc_repo, twk_sha = ensure_repo("tweakcc-fixed", "https://github.com/skrabe/tweakcc-fixed.git", version_source=True, pin_ref="29cba74")
+    tweakcc_repo, twk_sha = ensure_repo("tweakcc-fixed", "https://github.com/skrabe/tweakcc-fixed.git", version_source=True, pin_ref="452f15a")
     unnerf_repo, unf_sha = ensure_repo("unnerfcc", "https://github.com/brooksbUWO/unnerfcc.git", branch="master", version_source=True)
     lcc_repo, lcc_sha = ensure_repo("lobotomized-claude-code", "https://github.com/skrabe/lobotomized-claude-code.git")
 

@@ -168,7 +168,7 @@ seal digest, or mark a phase complete by hand.
 
 | Step | Action | Verify before moving on |
 |---|---|---|
-| 1 | Run `python scripts/install.py --prepare` (safe inside a CC session). | Log shows `tweakcc-fixed pinned to 29cba74`, `Recorded target version @<ver>`, and a dist build. |
+| 1 | Run `python scripts/install.py --prepare` (safe inside a CC session). | Log shows `tweakcc-fixed pinned to 452f15a`, `Recorded target version @<ver>`, and a dist build. |
 | 2 | Close ALL Claude Code sessions (terminal and editor). | No `claude.exe` running. |
 | 3 | Run `%USERPROFILE%\.tweakcc-gilligan\apply-external.bat` (Windows) or `~/.tweakcc-gilligan/apply-external.sh` (Unix). | `tweakcc-fixed applied successfully` then `unnerfcc applied successfully`. |
 | 4 | Confirm the result. | `verify.py` prints dual version lines and all three content sources PASS. |
@@ -178,7 +178,7 @@ seal digest, or mark a phase complete by hand.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `dist/index.mjs missing` | `--apply` ran without a completed `--prepare`. | Run `--prepare` first. |
-| `claude module not found in any of the binary modules` | tweakcc-fixed commit does not match the target binary format. | See the binary-format section; the pin (`29cba74`) must match the target. |
+| `claude module not found in any of the binary modules` | tweakcc-fixed commit does not match the target binary format. | See the binary-format section; the pin (`452f15a`) must match the target. |
 | `BUN_FORMAT_INCOMPATIBLE` / cannot determine module struct size | unnerfcc's parser hit an ambiguous Bun layout. | This is a real unnerfcc bug; fix `engine/bun-binary.mjs` in the unnerfcc dev repo, do not chase it in the installer. |
 | `unrecognized binary format (neither ELF nor 64-bit Mach-O)` on Windows | An upstream engine sync clobbered the fork's PE support (upstream parses ELF/Mach-O only). | Re-port PE support into `engine/bun-binary.mjs` (runbook step 3's Windows-support check names the pieces). |
 | Unpack succeeds, then `Is a directory` / EISDIR in classify or gen-catalog | Pipeline scripts are older than the engine interface (code-split engine unpacks to a directory; old scripts expect one cli.js). | Sync `upgrade.sh` and `scripts/*.mjs` from upstream too, then re-apply the fork's Windows deltas (runbook step 3). |
@@ -217,8 +217,8 @@ Error: Could not extract JS from native binary: ...claude.exe (claude module not
 
 When you see that error, run `git -C ~/.tweakcc-gilligan/repos/tweakcc-fixed log -1 --oneline`. Compare the commit against the target format. The cause is the format mismatch. Do not edit `unnerfcc`, rebuild, or delete `dist/`.
 
-The `pin_ref` argument in `install.py` `prepare_stage` (currently `29cba74`, "prompts:
-catalogue CC 2.1.257", CODE-SPLIT format) enforces the match. Change the pin ONLY together
+The `pin_ref` argument in `install.py` `prepare_stage` (currently `452f15a`, "prompts:
+catalogue CC 2.1.258", CODE-SPLIT format) enforces the match. Change the pin ONLY together
 with the engine-sync step of the runbook: the pin, the fork's `unnerfcc/engine/` state, and
 the target version must all agree on one binary format. Moving the pin alone trades one
 format error for the other.
@@ -311,7 +311,7 @@ python scripts/test_termination_contract.py
 ## Runtime Layout
 
 - `~/.tweakcc-gilligan/` (Override via `TWEAKCC_GILLIGAN_HOME` environment variable):
-  - `repos/`: Working clones of `tweakcc-fixed`, `unnerfcc`, and `lobotomized-claude-code`. `unnerfcc` and `lobotomized-claude-code` fast-forward to their remotes on every prepare. `tweakcc-fixed` does NOT. `pin_ref` in `prepare_stage` pins it to `29cba74` (CC 2.1.257 catalog, code-split extractor). Thus prepare cannot advance it to a release whose extractor does not match the target binary format (see "tweakcc-fixed binary-format compatibility").
+  - `repos/`: Working clones of `tweakcc-fixed`, `unnerfcc`, and `lobotomized-claude-code`. `unnerfcc` and `lobotomized-claude-code` fast-forward to their remotes on every prepare. `tweakcc-fixed` does NOT. `pin_ref` in `prepare_stage` pins it to `452f15a` (CC 2.1.258 catalog, code-split extractor). Thus prepare cannot advance it to a release whose extractor does not match the target binary format (see "tweakcc-fixed binary-format compatibility").
   - `logs/`: Timestamped installation logs and active PID tracking.
   - `manifest.json`: Installation record, target binary path, and commit SHAs.
   - `target_version.txt`: The Claude Code version the prepare stage recorded and the apply stage requires.
