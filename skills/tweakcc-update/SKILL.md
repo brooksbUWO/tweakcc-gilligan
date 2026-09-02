@@ -48,16 +48,76 @@ upstream rewords a prompt. No milestone, no phases.
    extraction, the anchor checks, and the session's own loaded context would all be from the
    wrong version.
 3. **Close the readiness gap** (only when READINESS reports a lag). In order:
-   - If the target crossed a binary-format boundary (see the format table below), the
-     fork's engine must support it first: sync `unnerfcc/engine/` from the fork's upstream
-     (lukehutch/unnerfcc, which tracks CC releases closely) into the dev clone at
-     `unnerfcc/`, engine code only, never prompts. Then update the `pin_ref` in
-     `install.py` to the tweakcc-fixed commit matching the format.
-   - `cd unnerfcc && ./upgrade.sh` self-extracts the target corpus from the genuine binary
-     and builds `data/prompts/prompts-<target>.json`.
+   - If the target crossed a binary-format boundary (see the format table below), sync CODE
+     from the fork's upstream (lukehutch/unnerfcc) into the dev clone at `unnerfcc/`. The
+     sync set is `engine/` PLUS the pipeline scripts that consume the engine's interface:
+     `upgrade.sh`, `install.sh`, `scripts/*.mjs`, `scripts/package*.json`. Never sync prompt
+     or rule content: `scripts/apply-unnerfs.py`, `system-prompts/`, `data/prompts/`. An
+     engine-only sync strands the pipeline on the old interface. The code-split engine
+     unpacks to a directory. The old scripts expect one cli.js and die with EISDIR ("Is a
+     directory") after a good unpack. Then update the `pin_ref` in `install.py` to the
+     tweakcc-fixed commit that matches the format.
+   - After each engine sync, make sure that the fork's Windows support survived. Upstream's
+     engine parses ELF and Mach-O only. `grep -c "findBunSectionPE\|repackPE"
+     engine/bun-binary.mjs` must be nonzero. If it is zero, re-port the Windows pieces: the
+     PE `.bun` section parse, `repackPE` (node-lief), FileAlignment padding tolerance in the
+     size-header check, and `B:/~BUN/root/...` drive-letter module names in the struct
+     validator and `moduleRelPath`. Also make sure that `win_resolve_shim` is present in
+     `upgrade.sh` and `install.sh`. On Windows, `claude` on PATH is npm's sh shim, and
+     readlink cannot see through it. Without the helper, the pipeline parses the shim script
+     as the binary.
+   - Seed BOTH AI steps from upstream BEFORE you run upgrade.sh. Upstream already
+     classified AND named the target's prompts. Without both seeds, the run re-does hours
+     of AI work: classify on the strings, then relabel on ~2400 anonymous prompts.
+     1. Classify seed: merge upstream's `data/string-catalog.json` into the local one
+        (union keyed by sha256, local entries win). Copy the target's
+        `data/bucket-analysis-<ver>.json`. Result: only Windows-only strings remain to
+        classify (131 at 2.1.257).
+     2. Relabel seed: build a MERGED carry-forward catalog with
+        `.claude/workspace/scripts/unnerfcc-seed/merge-seed-catalog.mjs`: every entry of
+        the fork's previous catalog (fork ids win) plus the upstream entries for the
+        target (`git show <upstream sync commit>:data/prompts/prompts-<target>.json`)
+        whose hash and id are both new. Never replace the fork catalog with upstream's:
+        rules are keyed to fork slug ids, and the fork relabeled some ids. Pass the
+        merged file with `--seed`. Result: relabel names only the prompts that no
+        catalog has named.
+   - `cd unnerfcc && ./upgrade.sh --version <target> --seed <merged.json> --no-bucket-analyze --yes`
+     extracts the target corpus from the genuine binary and builds
+     `data/prompts/prompts-<target>.json`. All three flags are required. Without
+     `--version`, upgrade.sh targets npm latest, not the intersection target. Without
+     `--no-bucket-analyze`, upgrade.sh's bucket-analysis step has an AI worker author NEW
+     un-nerf rules and merges them into `scripts/apply-unnerfs.py`. That is un-nerf content
+     work (rule 7, the recipe's cold-read prohibition), never part of a version update.
+     `--seed` and `--no-bucket-analyze` are the fork's additions to upgrade.sh.
+   - If the run stops at the catalog gate "N ids removed vs prev, suspiciously large":
+     the merged seed holds upstream entries absent from the Windows binary. Confirm the
+     removed ids split into upstream-origin (not in the fork's previous catalog) and
+     fork-origin (each surfaces as MISSING in `--check`, handled in the re-anchor step).
+     Then re-run with `--seed` pointing at the now fully labeled
+     `prompts-<target>.json` (copy it out first: the run overwrites it). Every id carries,
+     the relabel worklist is 0, and the gate passes.
+   - Relabel runs its chunks one at a time through the claude CLI (about 5 minutes per
+     chunk). To finish faster, run the remaining chunks in parallel from the run's
+     `relabel/` work directory with the same `claude -p` command upgrade.sh uses (it
+     skips any chunk whose `labels-NNN.json` exists). Label files written through
+     PowerShell carry a UTF-8 BOM; `relabel.mjs` strips it (fork fix).
+   - Windows only: no `python3.exe` exists. Make sure that `~/.local/bin/python3.bat`
+     (content: `python %*`) exists. Without it, Windows-side `python3` spawns fail, and
+     PowerShell ShellExecutes a bare extensionless `python3` shim, which opens endless
+     "Select an app" pickers.
    - `python unnerfcc/scripts/apply-unnerfs.py --check` names every rule whose stock anchor
      drifted. Re-anchor those rules (same `unnerf` body, updated `stock` text from the new
-     extraction); a rule whose prompt vanished (see `removed.json`) is retired deliberately,
+     extraction). Do the edit with
+     `.claude/workspace/scripts/unnerfcc-reanchor/reanchor_rules.py` (AST-positioned,
+     count-asserted; ops: reanchor, rekey, retire, add; `--dry-run` first). Write a spec
+     builder for the version (example: the 2026-09-02 run's `build_spec_2_1_257.py`) that
+     reads each new stock from the store file bytes and asserts it occurs exactly once,
+     with placeholder parity on every rewrite. Three drift kinds recur: punctuation only
+     (em dash to hyphen), a renamed `${...}` placeholder, and a prompt split into sibling
+     fragments (a MISSING file whose text now lives under a new slug: grep the store for
+     the stock's first 60 characters; re-key when the stock is present, re-anchor when it
+     drifted, and add a rule on the sibling fragment when the un-nerfed span was split).
+     A rule whose prompt vanished (see `removed.json`) is retired deliberately,
      never left to fail silently.
 4. **Apply and verify.** `python scripts/install.py --prepare` (safe in-session); close all
    CC sessions; run `apply-external.bat`; `verify.py` must pass all four checks. Both
@@ -108,7 +168,7 @@ seal digest, or mark a phase complete by hand.
 
 | Step | Action | Verify before moving on |
 |---|---|---|
-| 1 | Run `python scripts/install.py --prepare` (safe inside a CC session). | Log shows `tweakcc-fixed pinned to 2dc353c`, `Recorded target version @<ver>`, and a dist build. |
+| 1 | Run `python scripts/install.py --prepare` (safe inside a CC session). | Log shows `tweakcc-fixed pinned to 29cba74`, `Recorded target version @<ver>`, and a dist build. |
 | 2 | Close ALL Claude Code sessions (terminal and editor). | No `claude.exe` running. |
 | 3 | Run `%USERPROFILE%\.tweakcc-gilligan\apply-external.bat` (Windows) or `~/.tweakcc-gilligan/apply-external.sh` (Unix). | `tweakcc-fixed applied successfully` then `unnerfcc applied successfully`. |
 | 4 | Confirm the result. | `verify.py` prints dual version lines and all three content sources PASS. |
@@ -118,8 +178,11 @@ seal digest, or mark a phase complete by hand.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `dist/index.mjs missing` | `--apply` ran without a completed `--prepare`. | Run `--prepare` first. |
-| `claude module not found in any of the binary modules` | tweakcc-fixed commit does not match the target binary format. | See the binary-format section; the pin (`2dc353c`) must match the target. |
+| `claude module not found in any of the binary modules` | tweakcc-fixed commit does not match the target binary format. | See the binary-format section; the pin (`29cba74`) must match the target. |
 | `BUN_FORMAT_INCOMPATIBLE` / cannot determine module struct size | unnerfcc's parser hit an ambiguous Bun layout. | This is a real unnerfcc bug; fix `engine/bun-binary.mjs` in the unnerfcc dev repo, do not chase it in the installer. |
+| `unrecognized binary format (neither ELF nor 64-bit Mach-O)` on Windows | An upstream engine sync clobbered the fork's PE support (upstream parses ELF/Mach-O only). | Re-port PE support into `engine/bun-binary.mjs` (runbook step 3's Windows-support check names the pieces). |
+| Unpack succeeds, then `Is a directory` / EISDIR in classify or gen-catalog | Pipeline scripts are older than the engine interface (code-split engine unpacks to a directory; old scripts expect one cli.js). | Sync `upgrade.sh` and `scripts/*.mjs` from upstream too, then re-apply the fork's Windows deltas (runbook step 3). |
+| Windows: pipeline "parses" a tiny script instead of the binary, or endless "Select an app" pickers | `claude` resolved to npm's sh shim, or `python3` resolved to a non-executable shim. | `win_resolve_shim` must be present in `upgrade.sh`/`install.sh`; `~/.local/bin/python3.bat` must exist (runbook step 3). |
 
 Do NOT "fix" a failed apply by editing `unnerfcc` blindly, rebuilding, deleting `dist/`, or hunting the minified error. First read the symptom row above; the cause is almost always the format pin or a skipped `--prepare`.
 
@@ -154,11 +217,11 @@ Error: Could not extract JS from native binary: ...claude.exe (claude module not
 
 When you see that error, run `git -C ~/.tweakcc-gilligan/repos/tweakcc-fixed log -1 --oneline`. Compare the commit against the target format. The cause is the format mismatch. Do not edit `unnerfcc`, rebuild, or delete `dist/`.
 
-The `pin_ref` argument in `install.py` `prepare_stage` (currently `2dc353c`, v2.7.38, OLD
-single-module format) enforces the match. Change the pin ONLY together with the engine-sync
-step of the runbook: a 2.1.246+ target needs BOTH the fork's `unnerfcc/engine/` synced to a
-code-split-capable state AND the pin moved to `890c928` or later. Moving the pin alone
-trades one format error for the other.
+The `pin_ref` argument in `install.py` `prepare_stage` (currently `29cba74`, "prompts:
+catalogue CC 2.1.257", CODE-SPLIT format) enforces the match. Change the pin ONLY together
+with the engine-sync step of the runbook: the pin, the fork's `unnerfcc/engine/` state, and
+the target version must all agree on one binary format. Moving the pin alone trades one
+format error for the other.
 
 ### Recognition precondition and version-delta bridge (mapping against a NEW CC version)
 
@@ -248,7 +311,7 @@ python scripts/test_termination_contract.py
 ## Runtime Layout
 
 - `~/.tweakcc-gilligan/` (Override via `TWEAKCC_GILLIGAN_HOME` environment variable):
-  - `repos/`: Working clones of `tweakcc-fixed`, `unnerfcc`, and `lobotomized-claude-code`. `unnerfcc` and `lobotomized-claude-code` fast-forward to their remotes on every prepare. `tweakcc-fixed` does NOT. `pin_ref` in `prepare_stage` pins it to `2dc353c` (v2.7.38). Thus prepare cannot advance it to a release whose extractor does not match the target binary format (see "tweakcc-fixed binary-format compatibility").
+  - `repos/`: Working clones of `tweakcc-fixed`, `unnerfcc`, and `lobotomized-claude-code`. `unnerfcc` and `lobotomized-claude-code` fast-forward to their remotes on every prepare. `tweakcc-fixed` does NOT. `pin_ref` in `prepare_stage` pins it to `29cba74` (CC 2.1.257 catalog, code-split extractor). Thus prepare cannot advance it to a release whose extractor does not match the target binary format (see "tweakcc-fixed binary-format compatibility").
   - `logs/`: Timestamped installation logs and active PID tracking.
   - `manifest.json`: Installation record, target binary path, and commit SHAs.
   - `target_version.txt`: The Claude Code version the prepare stage recorded and the apply stage requires.

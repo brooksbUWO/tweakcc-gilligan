@@ -254,14 +254,14 @@ def preflight_checks(require_no_claude=True):
 
 def ensure_repo(repo_name, git_url, branch=None, version_source=False, pin_ref=None):
     # pin_ref pins the repo to an exact commit/tag and DISABLES the
-    # fast-forward-to-remote step. tweakcc-fixed 2.8.0 rewrote its binary
-    # extractor for the CC 2.1.246 code-split Bun format and dropped the
-    # single-module format that CC 2.1.235 (the unnerfcc-capped target) uses,
-    # so its extractor throws "claude module not found in any of the binary
-    # modules" on a 2.1.235 binary. v2.7.38 (2dc353c) is the last pre-code-split
-    # release; it patches the 2.1.235 binary and still ships the 2.1.235 prompt
-    # catalog. Pinning here keeps prepare from advancing tweakcc-fixed past the
-    # binary format the target actually uses.
+    # fast-forward-to-remote step. Each tweakcc-fixed release patches ONE Bun
+    # binary format (2.8.0+ = the CC 2.1.246+ code-split format; v2.7.38 and
+    # earlier = the old single-module format). A mismatch throws "claude module
+    # not found in any of the binary modules". 29cba74 ("prompts: catalogue CC
+    # 2.1.257") carries the code-split extractor (890c928) plus the 2.1.257
+    # prompt catalog and patch re-anchors, matching the 2.1.257 target. Pinning
+    # here keeps prepare from advancing tweakcc-fixed past the binary format
+    # the target actually uses.
     REPOS_DIR.mkdir(parents=True, exist_ok=True)
     target = REPOS_DIR / repo_name
     if not target.exists() or not (target / ".git").exists():
@@ -469,11 +469,11 @@ def prepare_stage():
     # so computing it before the sync would record a target from stale clones
     # (observed: a 143-commit-stale tweakcc-fixed pinned the target at an old
     # version while newer catalogs sat unfetched).
-    # Pin tweakcc-fixed to v2.7.38 (2dc353c): the last release before the 2.8.0
-    # code-split rewrite, which dropped patch support for the CC 2.1.235
-    # single-module binary format the target uses. See ensure_repo's pin_ref
+    # Pin tweakcc-fixed to 29cba74 ("prompts: catalogue CC 2.1.257"): the
+    # code-split extractor (CC 2.1.246+ format) with the 2.1.257 catalog and
+    # patch re-anchors, matching the 2.1.257 target. See ensure_repo's pin_ref
     # comment and SKILL.md "tweakcc-fixed binary-format compatibility".
-    tweakcc_repo, twk_sha = ensure_repo("tweakcc-fixed", "https://github.com/skrabe/tweakcc-fixed.git", version_source=True, pin_ref="2dc353c")
+    tweakcc_repo, twk_sha = ensure_repo("tweakcc-fixed", "https://github.com/skrabe/tweakcc-fixed.git", version_source=True, pin_ref="29cba74")
     unnerf_repo, unf_sha = ensure_repo("unnerfcc", "https://github.com/brooksbUWO/unnerfcc.git", branch="master", version_source=True)
     lcc_repo, lcc_sha = ensure_repo("lobotomized-claude-code", "https://github.com/skrabe/lobotomized-claude-code.git")
 
