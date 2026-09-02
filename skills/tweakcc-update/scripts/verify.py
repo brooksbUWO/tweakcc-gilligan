@@ -11,12 +11,45 @@ and verifies that dual version lines are printed by `claude --version`.
 
 import argparse
 import os
+import re
 import sys
 import subprocess
 import shutil
 import pathlib
 import threading
 import time
+
+# Markers mirrored from install.py: BEGIN/END sentinels prove the apply log
+# captured the patchers' per-item accounting; the failure patterns are the
+# same per-item markers the installer aborts on.
+CAPTURE_SENTINELS = ["BEGIN TWEAKCC-FIXED OUTPUT", "BEGIN UNNERFCC OUTPUT"]
+FAIL_PATTERNS = [r"failed to ", r"inline-blob: failed", r"\[FAILED",
+                 r"Rules FAILED\s*:\s*[1-9]", r"Missing files\s*:\s*[1-9]"]
+
+
+def check_apply_accounting():
+    """Verify the most recent apply log holds full per-item accounting with no
+    failure markers. Returns (ok, message). A log without the capture
+    sentinels predates the output-capture installer and proves nothing."""
+    gilligan_home = pathlib.Path(os.environ.get("TWEAKCC_GILLIGAN_HOME") or pathlib.Path.home())
+    log_dir = gilligan_home / ".tweakcc-gilligan" / "logs"
+    logs = sorted(log_dir.glob("install_*.log"), key=lambda p: p.stat().st_mtime) if log_dir.exists() else []
+    apply_logs = [p for p in logs if "Stage 2: Applying Patches" in p.read_text(encoding="utf-8", errors="replace")]
+    if not apply_logs:
+        return False, "no apply log found under " + str(log_dir)
+    latest = apply_logs[-1]
+    text = latest.read_text(encoding="utf-8", errors="replace")
+    missing = [s for s in CAPTURE_SENTINELS if s not in text]
+    if missing:
+        return False, (f"last apply log {latest.name} lacks per-item accounting ({', '.join(missing)}); "
+                       "it predates the output-capture installer. Re-run apply-external to record a provable apply.")
+    bad = []
+    for line in text.splitlines():
+        if any(re.search(p, line, re.IGNORECASE) for p in FAIL_PATTERNS):
+            bad.append(line.strip())
+    if bad:
+        return False, f"last apply log {latest.name} carries {len(bad)} failure marker(s), e.g.: {bad[0][:120]}"
+    return True, f"last apply log {latest.name} holds full accounting with no failure markers"
 
 
 def _arm_watchdog(max_seconds: float, probe_seconds: float) -> None:
@@ -66,7 +99,41 @@ def main():
     args = parser.parse_args()
     _arm_watchdog(args.max_seconds, args.watchdog_probe)
 
+    # Tee all output to a timestamped log next to the install logs, so an
+    # external run leaves its verification verdict on disk (no manual
+    # copy-paste of console output into notes files).
+    import datetime
+
+    class _Tee:
+        def __init__(self, stream, path):
+            self._stream = stream
+            try:
+                self._f = open(path, "a", encoding="utf-8")
+            except Exception:
+                self._f = None
+        def write(self, s):
+            self._stream.write(s)
+            if self._f:
+                try:
+                    self._f.write(s)
+                    self._f.flush()
+                except Exception:
+                    pass
+        def flush(self):
+            self._stream.flush()
+
+    gilligan_home = pathlib.Path(os.environ.get("TWEAKCC_GILLIGAN_HOME") or pathlib.Path.home())
+    log_dir = gilligan_home / ".tweakcc-gilligan" / "logs"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        verify_log = log_dir / f"verify_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        sys.stdout = _Tee(sys.stdout, verify_log)
+    except Exception:
+        verify_log = None
+
     print("=== tweakcc-gilligan Verification ===")
+    if verify_log:
+        print(f"(output logged to {verify_log})")
     failed = False
 
     # 1. Check version output (MUST carry dual version lines)
@@ -110,6 +177,16 @@ def main():
         else:
             print(f"  [FAIL] {source}: MISSING (marker {marker!r} not found)")
             failed = True
+
+    # 4. Apply accounting: sentinel greps prove three strings, not completeness.
+    # The last apply log must hold the patchers' full per-item output with zero
+    # failure markers; that is the completeness oracle (a screenshot is not).
+    ok, msg = check_apply_accounting()
+    if ok:
+        print(f"  [PASS] apply accounting: {msg}")
+    else:
+        print(f"  [FAIL] apply accounting: {msg}")
+        failed = True
 
     if failed:
         print("\nVerification FAILED: One or more checks failed.")

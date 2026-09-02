@@ -66,7 +66,7 @@ Do the recipe's [R001] MAP workflow, all steps in order (state the concept and i
 2. <REPORT_MD> - a short report: for EACH governed file, HOW you found it (recognition vs search), the counts of each, which surface-matched prompts you DROPPED as not-governed and why, and the recipe's Step 9 self-check (recognition layer non-empty; did recognition catch a prompt a keyword search would miss).
 
 HARD CONSTRAINTS (non-destructive):
-- Write ONLY the two output files above (plus your close-out memories). Do NOT edit, move, or create any other file. Do NOT touch: apply-unnerfs.py, the prompt store, or anything under .claude\workspace\remediation-v3\ except to READ the store directory named above.
+- Write ONLY the two output files above (plus your close-out memories). Do NOT edit, move, or create any other file. Do NOT touch: apply-unnerfs.py, the prompt store, or anything under .claude\workspace\prompt-store\ except to READ the store directory named above.
 - Do NOT run any apply, splice, or patch. This is a read-and-map task only.
 
 RETURN, numbered and concise:

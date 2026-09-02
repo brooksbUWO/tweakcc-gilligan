@@ -1,6 +1,10 @@
-# Update pipeline: extract to verified apply
+# Remediation pipeline: extract to verified apply
 
-A Claude Code version update is a new GSD milestone. Run `/gsd-new-milestone` to create the phase set, then plan and execute each phase in order with `/gsd-plan-phase <N>` and `/gsd-execute-phase <N>`, where `<N>` is the number the milestone assigned. `gsd-verifier` gates each phase against its success criteria; a phase reaches `[x]` only on a `passed` verdict. The seven gates below are the success criteria the phases carry.
+This pipeline is for REMEDIATION-scale work: un-nerf content changes (new doctrine
+concepts, corrected rewrites, coverage gaps). A plain version bump does NOT need it; that
+is the SKILL.md "Version update runbook" (check, gate, extract, re-anchor, apply, verify).
+
+A remediation is a new GSD milestone. Run `/gsd-new-milestone` to create the phase set, then plan and execute each phase in order with `/gsd-plan-phase <N>` and `/gsd-execute-phase <N>`, where `<N>` is the number the milestone assigned. `gsd-verifier` gates each phase against its success criteria; a phase reaches `[x]` only on a `passed` verdict. The seven gates below are the success criteria the phases carry. Authoring method inside G2 is recognition-first per recipe-concept-prompt-mapping (never a store cold-read), and every gate that judges a rewrite must compare against the LIVE prompt baseline, not stock alone: a stock-only gate green-lights regressions (2026-08-28 forensics).
 
 ## The seven gates
 
@@ -16,14 +20,19 @@ A Claude Code version update is a new GSD milestone. Run `/gsd-new-milestone` to
 
 ## Version and format constraints
 
-The target version is `min(unnerfcc newest catalog, tweakcc-fixed newest catalog)`, computed by `check_version_intersection.py`. `unnerfcc` is the usual cap.
+The target version is the RESULT line of `check_version_intersection.py`: the minimum of
+the two patcher projects' UPSTREAM-supported versions. The local fork catalogs are the
+READINESS report (what is installable before the gap-closure steps), never the target.
 
 The checked-out `tweakcc-fixed` commit must match the target binary format:
 
 - Target 2.1.241 or less (OLD single-module Bun format): `tweakcc-fixed` at `2dc353c` (v2.7.38) or earlier.
 - Target 2.1.246 or more (CODE-SPLIT Bun format): `tweakcc-fixed` at `890c928` or later.
 
-`prepare_stage` pins `tweakcc-fixed` to `2dc353c` via `pin_ref`. Do not remove the pin until `unnerfcc` supports 2.1.246.
+`prepare_stage` pins `tweakcc-fixed` via `pin_ref` (currently `2dc353c`). Move the pin only
+together with the runbook's engine-sync step: a 2.1.246+ target needs the fork's
+`unnerfcc/engine/` code-split-capable AND the pin at `890c928+`; either alone fails with
+the other tool's format error.
 
 ## Prompt source
 

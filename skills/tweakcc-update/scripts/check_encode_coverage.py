@@ -37,7 +37,10 @@ from pathlib import Path
 # Locations. ENCODER is the authoritative predicate source; APPLY is the live
 # rules file it targets (repathed to the single dev unnerfcc copy).
 ENCODER = Path(__file__).resolve().parents[4] / ".claude" / "workspace" / "scripts" / "phase3-encode" / "encode_rules.py"
-DEFAULT_APPLY = Path("D:/Data/Programs/AI/Claude/Projects/tweakcc/unnerfcc/scripts/apply-unnerfs.py")
+# Derived like ENCODER: parents[4] is the project root from BOTH skill copies
+# (installed .claude/skills/... and dev tweakcc-gilligan/skills/...), so the
+# default resolves on any machine that has the unnerfcc clone at the root.
+DEFAULT_APPLY = Path(__file__).resolve().parents[4] / "unnerfcc" / "scripts" / "apply-unnerfs.py"
 
 
 def _arm_watchdog(max_seconds: float, probe_seconds: float) -> None:

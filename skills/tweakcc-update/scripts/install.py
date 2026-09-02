@@ -113,7 +113,7 @@ def kill_process_tree(proc):
     except Exception as e:
         log(f"Warning: Exception while terminating process PID {proc.pid}: {e}")
 
-def run_cmd(cmd, cwd=None, env=None, timeout=600, shell=False):
+def run_cmd(cmd, cwd=None, env=None, timeout=600, shell=False, capture_label=None):
     log(f"Running: {cmd if isinstance(cmd, str) else ' '.join(cmd)}")
     proc = None
     try:
@@ -122,10 +122,19 @@ def run_cmd(cmd, cwd=None, env=None, timeout=600, shell=False):
         )
         register_pid(proc.pid)
         stdout, stderr = proc.communicate(timeout=timeout)
+        if capture_label:
+            # Persist the patcher's full per-item accounting in the log. The
+            # summary "[OK] applied successfully" alone hides per-override
+            # failures (silent-failure class; observed 2026-08-30: a one-item
+            # startup banner with no way to reconstruct which overrides failed).
+            log(f"----- BEGIN {capture_label} -----\n{stdout}\n----- END {capture_label} -----")
+            if stderr.strip():
+                log(f"----- BEGIN {capture_label} (stderr) -----\n{stderr}\n----- END {capture_label} (stderr) -----")
         if proc.returncode != 0:
             log(f"Command exited with code {proc.returncode}")
-            log(f"STDOUT:\n{stdout}")
-            log(f"STDERR:\n{stderr}")
+            if not capture_label:
+                log(f"STDOUT:\n{stdout}")
+                log(f"STDERR:\n{stderr}")
             raise subprocess.CalledProcessError(proc.returncode, cmd, output=stdout, stderr=stderr)
         return stdout
     except subprocess.TimeoutExpired:
@@ -643,6 +652,35 @@ echo "=== Patches Applied and Verified Successfully! ==="
     log("\n=== Stage 1 Complete ===")
     log(f"To complete patching outside Claude Code, run: {ext_script}")
 
+# Per-item failure markers in patcher output. Exit code 0 from a patcher does
+# NOT prove every override landed: tweakcc-fixed exits 0 while individual
+# prompt overrides fail or skip. These patterns turn per-item failures into a
+# loud abort instead of a silently incomplete patch.
+TWEAKCC_FAIL_PATTERNS = [r"failed to ", r"inline-blob: failed", r"\[FAILED"]
+UNNERFCC_FAIL_PATTERNS = [r"\[FAILED", r"Rules FAILED\s*:\s*[1-9]", r"Missing files\s*:\s*[1-9]"]
+
+
+def check_patcher_output(name, output, fail_patterns):
+    """Die loudly when a patcher's output carries per-item failure markers.
+    'skipped' lines are surfaced as warnings but do not abort: some skips are
+    version-conditional by design; a failure marker never is."""
+    bad = []
+    skipped = []
+    for line in output.splitlines():
+        s = line.strip()
+        if any(re.search(p, s, re.IGNORECASE) for p in fail_patterns):
+            bad.append(s)
+        elif re.search(r"\bskipped\b", s, re.IGNORECASE) and not re.search(r"already un-nerfed", s, re.IGNORECASE):
+            skipped.append(s)
+    for s in skipped:
+        log(f"  [WARN] {name} skipped item: {s}")
+    if bad:
+        for s in bad:
+            log(f"  [FAIL] {name}: {s}")
+        die(f"{name} reported {len(bad)} per-item failure(s); the patch is INCOMPLETE.",
+            "Read the failure lines above (full output is in this log). Fix the named overrides/rules, then re-run the apply. Do not treat this binary as fully patched.")
+
+
 def apply_stage():
     log("=== Stage 2: Applying Patches to Binary ===")
     preflight_checks(require_no_claude=True)
@@ -684,8 +722,10 @@ def apply_stage():
 
     # Apply tweakcc-fixed
     log("Applying tweakcc-fixed code patches...")
-    run_cmd(["node", str(dist_mjs), "--apply"], timeout=180)
-    log("  [OK] tweakcc-fixed applied successfully")
+    twk_out = run_cmd(["node", str(dist_mjs), "--apply"], timeout=180,
+                      capture_label="TWEAKCC-FIXED OUTPUT")
+    check_patcher_output("tweakcc-fixed", twk_out, TWEAKCC_FAIL_PATTERNS)
+    log("  [OK] tweakcc-fixed applied successfully (per-item accounting logged, no failure markers)")
 
     # Apply unnerfcc
     log("Applying unnerfcc prompt un-nerfs...")
@@ -694,11 +734,13 @@ def apply_stage():
         if not git_bash or not git_bash.exists():
             die("Git Bash not found.", "Install Git for Windows or check bash installation path.")
         bash_cmd = f"cd '{unnerf_repo.as_posix()}' && ./install.sh"
-        run_cmd([str(git_bash), "-lc", bash_cmd], timeout=600)
+        unf_out = run_cmd([str(git_bash), "-lc", bash_cmd], timeout=600,
+                          capture_label="UNNERFCC OUTPUT")
     else:
-        run_cmd(["./install.sh"], cwd=str(unnerf_repo), timeout=600)
-
-    log("  [OK] unnerfcc applied successfully")
+        unf_out = run_cmd(["./install.sh"], cwd=str(unnerf_repo), timeout=600,
+                          capture_label="UNNERFCC OUTPUT")
+    check_patcher_output("unnerfcc", unf_out, UNNERFCC_FAIL_PATTERNS)
+    log("  [OK] unnerfcc applied successfully (per-item accounting logged, no failure markers)")
 
     # Write Manifest
     launcher = shutil.which("claude")

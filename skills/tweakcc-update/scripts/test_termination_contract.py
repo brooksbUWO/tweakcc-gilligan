@@ -229,8 +229,12 @@ class TestNormalBehaviorUntouched(unittest.TestCase):
         )
         if rc == 0:
             self.assertIn(
-                "RESULT: greatest common version =", out,
+                "RESULT: greatest common version", out,
                 "exit 0 must print the RESULT line\nSTDOUT:\n%s" % out,
+            )
+            self.assertIn(
+                "npm install -g @anthropic-ai/claude-code@", out,
+                "exit 0 must end with the paste-ready install command\nSTDOUT:\n%s" % out,
             )
         else:  # rc == 1
             self.assertIn(

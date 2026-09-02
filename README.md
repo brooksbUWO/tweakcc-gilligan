@@ -1,23 +1,26 @@
 # tweakcc-gilligan
 
-Un-nerf Claude Code and customize its binary with one command sequence, on Windows, Linux, and macOS.
+Customize the Claude Code you have installed on your own machine, with one command sequence, on
+Windows, Linux, and macOS.
 
-Claude Code ships with system prompts that tell it to be brief and do the minimum, plus a cap on
-reasoning effort. tweakcc-gilligan patches the installed binary to remove those limits and add UX
-features, so Claude Code works thoroughly instead of minimally. It runs the full patch chain for you:
-`tweakcc-fixed` for code features, `unnerfcc` for the prompt un-nerfs, and `lobotomized-claude-code`
-for system-reminder overrides. You do not edit the binary by hand.
+Claude Code ships with prompt text that tells it to be brief and do the minimum, plus a default cap
+on reasoning effort. tweakcc-gilligan rewrites those shipped prompt strings in your locally installed
+binary and adds UX features. As a result, Claude Code works thoroughly instead of minimally. The tool
+runs the full patch chain for you: `tweakcc-fixed` for code features, `unnerfcc` for the prompt
+rewrites, and `lobotomized-claude-code` for system-reminder overrides. You do not edit the binary by
+hand. The tool changes only the copy installed on your machine.
 
 ![tweakcc session start header](assets/tweakcc-session-start.png)
 
-- **Un-nerfed prompts.** Removes the "be brief, do the minimum" directives and the reasoning-effort cap.
+- **Thorough by default.** Rewrites the "be brief, do the minimum" directives and raises the default reasoning-effort setting.
 - **One safe chain.** Applies both patchers in the verified order (`tweakcc-fixed` first, `unnerfcc` second).
 - **Windows PE and Unix.** Native `claude.exe` (PE) unpack and repack, plus ELF and Mach-O.
-- **Three content sources.** Code features, prompt un-nerfs, and reminder overrides, bound in one pass.
+- **Three content sources.** Code features, prompt rewrites, and reminder overrides, applied in one pass.
 - **Runtime isolation.** All work stays under `~/.tweakcc-gilligan/` with PID tracking and timestamped logs.
-- **Reversible.** `claude --version` prints two lines when the patch is live; reset to stock is one command.
+- **Logged runs.** Every run logs the full per-item result of each patcher. Verification fails if any override failed.
+- **Reversible.** `claude --version` prints two lines when the patch is live. Reset to stock is one command.
 
-A patched binary reports both versions, so you can confirm the patch in one command:
+A patched binary reports both versions. One command shows that the patch is live:
 
 ```text
 $ claude --version
@@ -34,9 +37,9 @@ Claude Code, because a running session locks the binary file.
 
 ### Stage 1: prepare (safe inside a Claude Code session)
 
-Preparation runs preflight checks (Node 20+, disk space, running processes), checks version-catalog
-alignment, syncs the patcher repositories, builds the patchers, fills the system reminders, and
-generates the external apply script:
+The prepare stage runs preflight checks (Node 20+, disk space, running processes) and syncs the
+patcher repositories. Then it records the target version, builds the patchers, fills the system
+reminders, and writes the external apply script:
 
 ```bash
 python skills/tweakcc-update/scripts/install.py --prepare
@@ -57,7 +60,10 @@ python skills/tweakcc-update/scripts/install.py --apply
 
 ### Stage 3: verify
 
-Confirm the dual version lines and the sentinels for all three content sources:
+Four checks must pass: the dual version lines, the sentinels from the three content sources, and
+the apply accounting. The accounting check reads the newest install log. That log must hold the
+full per-item output of both patchers, with zero failure markers. The verifier also writes a copy
+of its own output to `~/.tweakcc-gilligan/logs/`.
 
 ```bash
 python skills/tweakcc-update/scripts/verify.py
@@ -74,6 +80,7 @@ claude --version output:
   [PASS] unnerfcc: present
   [PASS] tweakcc-fixed: present
   [PASS] system-reminders: present
+  [PASS] apply accounting: last apply log holds full accounting with no failure markers
 
 Verification SUCCESS: Dual version lines and all three content sources present.
 ```
@@ -87,8 +94,9 @@ Verification SUCCESS: Dual version lines and all three content sources present.
   record), then applies the tweakcc-fixed and unnerfcc patches to the installed binary.
 - `verify.py`: Confirms the dual version output from `claude --version` and the markers from all three
   content sources in the binary.
-- `check_version_intersection.py`: Reads the local catalog clones (falling back to GitHub) and npm to
-  find the greatest common supported release.
+- `check_version_intersection.py`: Reports the TARGET (the newest Claude Code release that both
+  patcher upstreams support) and the READINESS of the local catalogs. The last output line is a
+  paste-ready `npm install` command for the target.
 - `install.py --clean-backup`: Removes poisoned tweakcc backup files.
 - `test_termination_contract.py`: Runs the black-box suite that pins the scripts' termination contract
   (`--max-seconds` ceiling, exit codes 0, 1, 2, 3).
@@ -107,7 +115,7 @@ npm install -g @anthropic-ai/claude-code@<version>
 
 tweakcc-gilligan builds on these upstream projects:
 
-- [lukehutch/unnerfcc](https://github.com/lukehutch/unnerfcc): Prompt un-nerfing engine and Bun section packer.
+- [lukehutch/unnerfcc](https://github.com/lukehutch/unnerfcc): Prompt rewrite engine and Bun section packer.
 - [skrabe/tweakcc-fixed](https://github.com/skrabe/tweakcc-fixed): Binary patcher for Claude Code features and UX customizations.
 - [skrabe/lobotomized-claude-code](https://github.com/skrabe/lobotomized-claude-code): System-reminder override prompt set.
 

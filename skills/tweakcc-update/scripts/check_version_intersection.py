@@ -106,6 +106,45 @@ def get_unnerfcc_versions():
         sys.stderr.write(f"ERROR: Failed to fetch unnerfcc catalogs from brooksbUWO/unnerfcc (ref=main): {e}\n")
         return None
 
+UPSTREAM_COMMIT_SPECS = [
+    # (repo, subject pattern naming a supported CC version)
+    ("lukehutch/unnerfcc", re.compile(r"sync to Claude Code v(\d+\.\d+\.\d+)")),
+    ("skrabe/tweakcc-fixed", re.compile(r"\bCC v?(\d+\.\d+\.\d+)\b")),
+]
+
+def get_upstream_head_support():
+    """Newest CC version named in each upstream's recent commit SUBJECTS.
+
+    The local catalogs only say what the pinned/forked clones can install NOW.
+    Upstream support lands in commit subjects ("sync to Claude Code vX.Y.Z",
+    "prompts: catalogue CC X.Y.Z") long before it lands in this fork's catalog,
+    so reporting the catalog intersection alone understates the real ceiling.
+    Returns {repo: (version, subject) | None on fetch failure}.
+    """
+    results = {}
+    for repo, pattern in UPSTREAM_COMMIT_SPECS:
+        try:
+            commits = fetch_json(f"https://api.github.com/repos/{repo}/commits?per_page=30")
+        except Exception as e:
+            sys.stderr.write(f"WARNING: could not read {repo} commit subjects ({e}); "
+                             "upstream HEAD support UNKNOWN - do not treat the local result as the ceiling.\n")
+            results[repo] = None
+            continue
+        best = None
+        best_subject = None
+        for c in commits:
+            subject = c.get("commit", {}).get("message", "").split("\n", 1)[0]
+            m = pattern.search(subject)
+            if m:
+                v = m.group(1)
+                if best is None or [int(x) for x in v.split(".")] > [int(x) for x in best.split(".")]:
+                    best, best_subject = v, subject
+        results[repo] = (best, best_subject) if best else None
+        if best is None:
+            sys.stderr.write(f"WARNING: no CC version found in the last 30 {repo} commit subjects; "
+                             "upstream HEAD support UNKNOWN.\n")
+    return results
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--max-seconds", type=float, default=120.0, dest="max_seconds",
@@ -143,9 +182,39 @@ def main():
         sys.stderr.write("ERROR: No common supported version found between tweakcc-fixed and unnerfcc catalogs.\n")
         return 1
 
-    greatest_common_version = common_versions[-1]
-    print(f"RESULT: greatest common version = {greatest_common_version}")
-    print(f"        install with: npm install -g @anthropic-ai/claude-code@{greatest_common_version}")
+    local_common = common_versions[-1]
+
+    upstream = get_upstream_head_support()
+    print("UPSTREAM HEAD (commit subjects):")
+    upstream_versions = []
+    for repo, _ in UPSTREAM_COMMIT_SPECS:
+        entry = upstream.get(repo)
+        if entry:
+            ver, subject = entry
+            upstream_versions.append(ver)
+            print(f"  {repo:<22}: {ver} (\"{subject}\")")
+        else:
+            print(f"  {repo:<22}: UNKNOWN (see warning above)")
+
+    # The common version is what BOTH patcher projects support, so take the
+    # MINIMUM across the upstreams. The local fork catalogs lag upstream and
+    # only describe readiness, never the target.
+    if len(upstream_versions) == len(UPSTREAM_COMMIT_SPECS):
+        target = sort_versions(upstream_versions)[0]
+    else:
+        target = local_common
+        print("WARNING: an upstream is UNKNOWN; falling back to the local catalog")
+        print(f"         intersection ({local_common}). This may UNDERSTATE the true target.")
+
+    if [int(x) for x in local_common.split(".")] < [int(x) for x in target.split(".")]:
+        print(f"READINESS: local catalogs lag at {local_common} (fork catalog/engine not yet")
+        print(f"           synced to {target}). Closing the gap: install {target}, then run")
+        print("           upgrade.sh to extract its corpus and re-anchor the rules.")
+    else:
+        print(f"READINESS: local catalogs are current ({local_common}).")
+
+    print(f"RESULT: greatest common version (both patchers' upstream support) = {target}")
+    print(f"npm install -g @anthropic-ai/claude-code@{target}")
     return 0
 
 if __name__ == "__main__":
