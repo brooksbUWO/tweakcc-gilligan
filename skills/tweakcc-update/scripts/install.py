@@ -137,6 +137,11 @@ def run_cmd(cmd, cwd=None, env=None, timeout=600, shell=False, capture_label=Non
                 log(f"STDOUT:\n{stdout}")
                 log(f"STDERR:\n{stderr}")
             raise subprocess.CalledProcessError(proc.returncode, cmd, output=stdout, stderr=stderr)
+        if capture_label and stderr.strip():
+            # A captured patcher's stderr is classified too: a per-item failure
+            # printed only there (patch: ...: failed to ..., [LOST] ...) must not
+            # pass the gate because the patcher exited 0.
+            return stdout + "\n" + stderr
         return stdout
     except subprocess.TimeoutExpired:
         log(f"Command timed out after {timeout} seconds")

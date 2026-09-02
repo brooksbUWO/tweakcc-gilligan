@@ -14,7 +14,10 @@ separate Remediation job in SKILL.md; never mix the two.
    - `RESULT`: the TARGET (minimum of the two upstreams' supported versions, read from
      commit subjects AND from the `data/prompts/prompts-<ver>.json` filenames at each
      upstream HEAD; the higher signal wins so a new subject wording cannot under-report).
-   The `READINESS` line says whether APPLICABLE has caught up to RESULT.
+   The `READINESS` line says whether APPLICABLE has caught up to RESULT. When an upstream
+   could not be read, the script prints `RESULT-UNCERTAIN` instead of `RESULT`, exits 1,
+   prints no install line, and `install.py --prepare` stops rather than record the fallback;
+   re-run once GitHub is reachable.
 2. **Version gate: remediation only.** A mechanical update needs no gate on the running
    binary: `upgrade.sh` fetches the target binary into a temporary npm prefix for the
    extraction, and the apply installs the target itself. The gate applies only to

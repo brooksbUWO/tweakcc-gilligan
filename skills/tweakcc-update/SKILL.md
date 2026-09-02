@@ -166,8 +166,11 @@ patch the binary directly and never appear there. verify.py tees its own output 
   Two labeled lines: `APPLICABLE` is the newest version the local clones can patch now
   (minimum of the fork catalog and the pinned tweakcc-fixed catalog); `RESULT` is the
   greatest common version the two upstreams support (commit subjects and catalog filenames,
-  higher signal wins). The final output line is the paste-ready
-  `npm install -g @anthropic-ai/claude-code@<target>` command; surface it to the user VERBATIM.
+  higher signal wins). When both upstream signals resolved, the final output line is the
+  paste-ready `npm install -g @anthropic-ai/claude-code@<target>` command; surface it to the
+  user VERBATIM. When an upstream could not be read, the script prints `RESULT-UNCERTAIN`
+  (a local-catalog fallback that may understate the target), exits 1, prints no install
+  line, and `--prepare` stops rather than record it; re-run when GitHub is reachable.
   The READINESS line reports whether APPLICABLE has caught up to RESULT; a lag is closed by
   the version update runbook.
 - **Skill mirror check**:

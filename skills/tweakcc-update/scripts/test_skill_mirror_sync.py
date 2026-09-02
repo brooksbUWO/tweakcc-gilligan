@@ -20,7 +20,7 @@ import sys
 import threading
 import time
 
-IGNORE = {"__pycache__", ".pytest_cache"}
+IGNORE = {"__pycache__"}
 
 
 def _arm_watchdog(max_seconds: float, probe_seconds: float) -> None:
