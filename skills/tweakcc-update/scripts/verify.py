@@ -4,7 +4,7 @@ Verification script for tweakcc-gilligan.
 
 Checks that the installed Claude Code binary carries all three patch content sources:
 1. unnerfcc prompt un-nerfs ("senior-engineer standard")
-2. tweakcc-fixed code patches ("clear-screen")
+2. tweakcc-fixed code patches ("+ tweakcc v")
 3. system-reminder overrides ("As you answer the user's questions...")
 and verifies that dual version lines are printed by `claude --version`.
 """
@@ -23,8 +23,12 @@ import time
 # captured the patchers' per-item accounting; the failure patterns are the
 # same per-item markers the installer aborts on.
 CAPTURE_SENTINELS = ["BEGIN TWEAKCC-FIXED OUTPUT", "BEGIN UNNERFCC OUTPUT"]
-FAIL_PATTERNS = [r"failed to ", r"inline-blob: failed", r"\[FAILED",
-                 r"Rules FAILED\s*:\s*[1-9]", r"Missing files\s*:\s*[1-9]"]
+# Import the installer's anchored patterns so both gates classify the patcher
+# output identically (an unanchored "failed to " here matched tweakcc-fixed's
+# per-prompt description lines and failed a successful apply, 2026-09-01).
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from install import TWEAKCC_FAIL_PATTERNS, UNNERFCC_FAIL_PATTERNS  # noqa: E402
+FAIL_PATTERNS = TWEAKCC_FAIL_PATTERNS + UNNERFCC_FAIL_PATTERNS
 
 
 def check_apply_accounting():
@@ -167,7 +171,10 @@ def main():
 
     sentinels = [
         ("unnerfcc", b"senior-engineer standard"),
-        ("tweakcc-fixed", b"clear-screen"),
+        # "+ tweakcc v" is spliced into the header by the patches-applied-indication
+        # patch; stock never contains it. (The old "clear-screen" marker occurs
+        # twice in stock, so it passed on an unpatched binary; observed 2026-09-01.)
+        ("tweakcc-fixed", b"+ tweakcc v"),
         ("system-reminders", b"As you answer the user's questions, you can use the following context:")
     ]
 

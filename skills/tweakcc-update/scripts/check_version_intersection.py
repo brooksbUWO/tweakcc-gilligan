@@ -115,37 +115,62 @@ UPSTREAM_COMMIT_SPECS = [
     ("skrabe/tweakcc-fixed", re.compile(r"\bCC v?(\d+\.\d+\.\d+)\b")),
 ]
 
-def get_upstream_head_support():
-    """Newest CC version named in each upstream's recent commit SUBJECTS.
+def _vkey(v):
+    return [int(x) for x in v.split(".")]
 
-    The local catalogs only say what the pinned/forked clones can install NOW.
-    Upstream support lands in commit subjects ("sync to Claude Code vX.Y.Z",
-    "prompts: catalogue CC X.Y.Z") long before it lands in this fork's catalog,
-    so reporting the catalog intersection alone understates the real ceiling.
-    Returns {repo: (version, subject) | None on fetch failure}.
+
+def get_upstream_catalog_versions(repo):
+    """Second signal: catalog filenames (data/prompts/prompts-<ver>.json) at the
+    upstream HEAD. Independent of commit-subject wording, which has already
+    changed once ("sync to" -> "support"); a fourth wording would otherwise
+    silently under-report the target. Returns a set (empty on fetch failure)."""
+    try:
+        data = fetch_json(f"https://api.github.com/repos/{repo}/contents/data/prompts")
+        return parse_versions([item["name"] for item in data if isinstance(item, dict) and "name" in item])
+    except Exception as e:
+        sys.stderr.write(f"WARNING: could not list {repo} data/prompts ({e}); catalog signal unavailable.\n")
+        return set()
+
+
+def get_upstream_head_support():
+    """Newest CC version each upstream supports, from TWO signals: recent commit
+    SUBJECTS ("sync to Claude Code vX.Y.Z", "prompts: catalogue CC X.Y.Z") and
+    the catalog filenames at HEAD. The higher of the two wins, so a new subject
+    wording cannot under-report as long as the catalog file exists.
+
+    The local catalogs only say what the pinned/forked clones can install NOW;
+    upstream support lands long before it lands in this fork's catalog, so the
+    catalog intersection alone understates the real ceiling.
+    Returns {repo: (version, evidence) | None when neither signal resolves}.
     """
     results = {}
     for repo, pattern in UPSTREAM_COMMIT_SPECS:
+        best = None
+        best_evidence = None
         try:
             commits = fetch_json(f"https://api.github.com/repos/{repo}/commits?per_page=30")
         except Exception as e:
-            sys.stderr.write(f"WARNING: could not read {repo} commit subjects ({e}); "
-                             "upstream HEAD support UNKNOWN - do not treat the local result as the ceiling.\n")
-            results[repo] = None
-            continue
-        best = None
-        best_subject = None
+            sys.stderr.write(f"WARNING: could not read {repo} commit subjects ({e}).\n")
+            commits = []
         for c in commits:
             subject = c.get("commit", {}).get("message", "").split("\n", 1)[0]
             m = pattern.search(subject)
-            if m:
-                v = m.group(1)
-                if best is None or [int(x) for x in v.split(".")] > [int(x) for x in best.split(".")]:
-                    best, best_subject = v, subject
-        results[repo] = (best, best_subject) if best else None
+            if m and (best is None or _vkey(m.group(1)) > _vkey(best)):
+                best, best_evidence = m.group(1), f"subject \"{subject}\""
+        if commits and best is None:
+            sys.stderr.write(f"WARNING: no CC version found in the last 30 {repo} commit subjects "
+                             "(wording drift?); relying on the catalog filename signal.\n")
+        cat = get_upstream_catalog_versions(repo)
+        if cat:
+            cat_best = sort_versions(cat)[-1]
+            if best is None or _vkey(cat_best) > _vkey(best):
+                best, best_evidence = cat_best, f"catalog data/prompts/prompts-{cat_best}.json"
         if best is None:
-            sys.stderr.write(f"WARNING: no CC version found in the last 30 {repo} commit subjects; "
-                             "upstream HEAD support UNKNOWN.\n")
+            sys.stderr.write(f"WARNING: {repo} upstream HEAD support UNKNOWN (both signals failed); "
+                             "do not treat the local result as the ceiling.\n")
+            results[repo] = None
+        else:
+            results[repo] = (best, best_evidence)
     return results
 
 def main():
@@ -188,14 +213,14 @@ def main():
     local_common = common_versions[-1]
 
     upstream = get_upstream_head_support()
-    print("UPSTREAM HEAD (commit subjects):")
+    print("UPSTREAM HEAD (commit subjects + catalog filenames):")
     upstream_versions = []
     for repo, _ in UPSTREAM_COMMIT_SPECS:
         entry = upstream.get(repo)
         if entry:
-            ver, subject = entry
+            ver, evidence = entry
             upstream_versions.append(ver)
-            print(f"  {repo:<22}: {ver} (\"{subject}\")")
+            print(f"  {repo:<22}: {ver} ({evidence})")
         else:
             print(f"  {repo:<22}: UNKNOWN (see warning above)")
 
@@ -216,6 +241,10 @@ def main():
     else:
         print(f"READINESS: local catalogs are current ({local_common}).")
 
+    # Two distinct numbers, printed on two labeled lines so they cannot be read
+    # as one: APPLICABLE is what the local clones can patch NOW (min of the fork
+    # catalog and the pinned tweakcc-fixed catalog); RESULT is the upstream target.
+    print(f"APPLICABLE: newest version the local clones can patch now (fork catalog and pinned tweakcc-fixed catalog) = {local_common}")
     print(f"RESULT: greatest common version (both patchers' upstream support) = {target}")
     print(f"npm install -g @anthropic-ai/claude-code@{target}")
     return 0

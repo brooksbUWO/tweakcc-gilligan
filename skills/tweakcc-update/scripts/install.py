@@ -476,9 +476,31 @@ def clean_poisoned_backup():
 
 # --- Staged Workflow Actions -------------------------------------------------
 
+def ensure_python3_shim():
+    """Windows only. install.sh and upgrade.sh spawn `python3`; no python3.exe
+    exists on Windows, and a bare extensionless `python3` shim gets ShellExecuted
+    into an endless "Select an app" picker. A `python3.bat` in ~/.local/bin is
+    what cmd/CreateProcess PATH lookups resolve instead. Verify it, create it
+    when absent, and warn when the directory is not on PATH."""
+    if os.name != "nt":
+        return
+    bin_dir = pathlib.Path.home() / ".local" / "bin"
+    shim = bin_dir / "python3.bat"
+    if shim.exists():
+        log(f"  [OK] python3 shim present: {shim}")
+    else:
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        shim.write_text("@echo off\r\nrem Windows-side python3 shim (written by tweakcc-update install.py --prepare)\r\npython %*\r\n", encoding="ascii")
+        log(f"  [OK] python3 shim created: {shim}")
+    path_entries = [e.strip().lower().rstrip("\\") for e in os.environ.get("PATH", "").split(os.pathsep)]
+    if str(bin_dir).lower().rstrip("\\") not in path_entries:
+        log(f"  [WARN] {bin_dir} is not on PATH; Windows-side python3 spawns in install.sh/upgrade.sh will fail until it is.")
+
+
 def prepare_stage():
     log("=== Stage 1: Preparing tweakcc-gilligan Setup ===")
     preflight_checks(require_no_claude=False)
+    ensure_python3_shim()
 
     # Recipe Step 5: Clean Poisoned Backup
     clean_poisoned_backup()
@@ -676,8 +698,22 @@ echo "=== Patches Applied and Verified Successfully! ==="
 # NOT prove every override landed: tweakcc-fixed exits 0 while individual
 # prompt overrides fail or skip. These patterns turn per-item failures into a
 # loud abort instead of a silently incomplete patch.
-TWEAKCC_FAIL_PATTERNS = [r"failed to ", r"inline-blob: failed", r"\[FAILED"]
-UNNERFCC_FAIL_PATTERNS = [r"\[FAILED", r"Rules FAILED\s*:\s*[1-9]", r"Missing files\s*:\s*[1-9]"]
+# Anchored to line start: tweakcc-fixed prints one free-text description line
+# per prompt file ("...subscription failed to arm...") and an unanchored
+# "failed to " matched those descriptions as failures (2026-09-01: 5 false
+# positives aborted a successful 2.1.258 apply). Real failures are
+# "patch: <name>: failed to ...", "Error: ...", "\u2716 Error ..." at column 0
+# (descriptions are indented, so lines are matched unstripped).
+TWEAKCC_FAIL_PATTERNS = [r"^patch: .*: failed to ", r"^inline-blob: failed", r"^Error: ", r"^\u2716 Error",
+                         r"^Failed to read markdown file", r"\[FAILED"]
+# Version-conditional skips worth surfacing (not the free-text descriptions).
+TWEAKCC_SKIP_PATTERN = r"\bskipping\b|^Skipped \d+ up-to-date|^Unresolved placeholder"
+TWEAKCC_NOTFOUND_PATTERN = r"^Could not find system prompt"  # hundreds per run (platform-conditional prompts); counted, not listed
+# "[LOST] <id>: couldNotFind" is patch-prompts.mjs reporting an un-nerf that never
+# reached the bundle; install.sh still exits 0 (2026-09-01: one lost rule passed
+# this gate as "applied successfully").
+UNNERFCC_FAIL_PATTERNS = [r"\[FAILED", r"\[LOST\]", r"UN-NERF\(S\) FAILED TO SPLICE",
+                         r"Rules FAILED\s*:\s*[1-9]", r"Missing files\s*:\s*[1-9]"]
 
 
 def check_patcher_output(name, output, fail_patterns):
@@ -686,14 +722,19 @@ def check_patcher_output(name, output, fail_patterns):
     version-conditional by design; a failure marker never is."""
     bad = []
     skipped = []
+    not_found = 0
     for line in output.splitlines():
-        s = line.strip()
+        s = line.rstrip()
         if any(re.search(p, s, re.IGNORECASE) for p in fail_patterns):
             bad.append(s)
-        elif re.search(r"\bskipped\b", s, re.IGNORECASE) and not re.search(r"already un-nerfed", s, re.IGNORECASE):
+        elif name == "tweakcc-fixed" and re.search(TWEAKCC_NOTFOUND_PATTERN, s):
+            not_found += 1
+        elif re.search(TWEAKCC_SKIP_PATTERN if name == "tweakcc-fixed" else r"\bskipped\b", s, re.IGNORECASE) and not re.search(r"already un-nerfed", s, re.IGNORECASE):
             skipped.append(s)
     for s in skipped:
         log(f"  [WARN] {name} skipped item: {s}")
+    if not_found:
+        log(f"  [WARN] {name}: {not_found} prompt override(s) not found in cli.js (platform-conditional; full list in this log)")
     if bad:
         for s in bad:
             log(f"  [FAIL] {name}: {s}")
