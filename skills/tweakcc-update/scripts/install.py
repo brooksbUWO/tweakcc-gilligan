@@ -492,9 +492,11 @@ def prepare_stage():
     except Exception as e:
         die(f"Greatest-common-version check failed: {e}",
             "Fix the error above and re-run --prepare; the apply stage must not run without a recorded target version.")
-    m = re.search(r"greatest common version = (\S+)", version_check_out)
+    # The RESULT line may carry a parenthetical between the label and "=":
+    # "greatest common version (both patchers' upstream support) = 2.1.257".
+    m = re.search(r"greatest common version[^=\n]*= (\d+\.\d+\.\d+)", version_check_out)
     if not m:
-        die("The greatest-common-version check ran but its output did not contain 'greatest common version = <ver>'.",
+        die("The greatest-common-version check ran but its output did not contain 'greatest common version ... = <ver>'.",
             f"check_version_intersection.py output format drifted; raw output above. Fix the parser or the script.")
     greatest_common_version = m.group(1)
 
