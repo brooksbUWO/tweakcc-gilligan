@@ -115,12 +115,37 @@ separate Remediation job in SKILL.md; never mix the two.
      unnerfcc runs. It reports `[LOST] <id>: couldNotFind` and install.py aborts the apply
      on that marker. Remove the rule, reset its `.md` body to stock, and leave a
      "NO RULE" comment in the catalog naming the override file (four such cases exist).
-4. **Apply and verify.** `python scripts/install.py --prepare` (safe in-session); close all
+4. **Revalidate the derived artifacts against the new version.** The re-anchor step only
+   touches rule-bearing files. The prompt store round and the concept map are keyed to the
+   PREVIOUS extraction and drift silently unless this step runs (2026-09-01: after the
+   2.1.258 update the map still pointed at 8 prompts that had left the binary, 17 changed
+   bodies, 1 renamed slug, on a 2.1.235 store round). In order, and every gate must exit 0
+   before the apply:
+   - Build the new store round: `node unnerfcc/scripts/sync-version.mjs <target> --target
+     <scratch> --no-manifest`, then `python .claude/workspace/scripts/store-provenance/build_queue.py
+     --prompts-dir <scratch> --out <scratch>/queue.csv`, then
+     `python .claude/workspace/scripts/per-batch-remediation/remediate.py materialize --queue
+     <scratch>/queue.csv --prompts-dir <scratch> --out .claude/workspace/prompt-store --batch
+     binary-faithful --revision r<NNNN>`. Delete `<scratch>` afterward (a second copy of a
+     store round outside `.backups/` is a rule 9 violation and inflates the repo).
+   - Validate every map row against the new round's `batch.json`: a file absent from the
+     new round is dropped with a reason in the map's `reconciliation.dropped_rows` (after a
+     grep of the new catalog for a renamed successor), a renamed slug is rekeyed, a row whose
+     body sha changed is re-read and carries a `reread` note. Then set the map's `store_dir`
+     to the new round. Write the change as a one-shot count-asserted script kept in the run
+     scratchpad (example: `runs/2026-09-01T2252/scratchpad/migrate_map_r0002.py`).
+   - Run the three gates listed in `.claude/workspace/prompt-store/CLAUDE.md`
+     (`doctrine_coverage_check.py`, `alignment_gate.py`, `map_coverage_gate.py`) against
+     the new round and a fresh `apply-unnerfs.py --dump-rules` output. The coverage gate's
+     uncovered rows are the [R002] worklist, not a version-update failure; the alignment and
+     doctrine gates must be clean.
+5. **Apply and verify.** `python scripts/install.py --prepare` (safe in-session); close all
    CC sessions; run `apply-external.bat`; `verify.py` must pass all four checks. Both
    patchers' full per-item accounting is captured automatically in
    `~/.tweakcc-gilligan/logs/` (install_*.log and verify_*.log); no manual output capture.
-5. **Behavioral spot-check.** In a fresh session on the patched binary, confirm a few known
-   un-nerfs by behavior (recipe rule: string presence is not proof).
+6. **Behavioral spot-check.** In a fresh session on the patched binary, confirm a few known
+   un-nerfs by behavior (recipe rule: string presence is not proof). A session resumed with
+   `-c` from before the apply is not evidence about the current binary; start a new process.
 
 ## tweakcc-fixed binary-format compatibility (read before you change the version logic)
 

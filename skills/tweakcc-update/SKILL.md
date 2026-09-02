@@ -4,7 +4,7 @@ description: "Use when installing, applying, re-applying, or updating the tweakc
 license: MIT
 allowed-tools: Bash(python ${CLAUDE_SKILL_DIR}/scripts/*)
 metadata:
-  version: 1.4.0
+  version: 1.4.1
 ---
 
 # tweakcc-gilligan: Dual-Patcher Skill for Claude Code
@@ -38,7 +38,10 @@ The full runbook is [references/version-update.md](references/version-update.md)
 check (APPLICABLE vs RESULT), the remediation-only version gate, closing the readiness gap
 (engine sync, Windows support check, sentinel lists, seeding both AI steps, `upgrade.sh`
 flags including `--jobs` and `--ack-removed`, re-anchoring drifted rules, shadowed rules),
-then apply, verify, and a behavioral spot-check. It also holds the tweakcc-fixed
+revalidating the derived artifacts (a new prompt-store round, the concept map re-keyed to
+it, the doctrine, alignment and coverage gates green), then apply, verify, and a
+behavioral spot-check from a fresh process. The update is not done while the store round
+or the map still names the previous version. It also holds the tweakcc-fixed
 binary-format table and the recognition precondition for mapping against a new version.
 
 ## Remediation (changing the un-nerfs themselves)
@@ -71,7 +74,7 @@ definitions. The milestone's phases carry these seven gates (phase numbers are w
 | G1 Categorize | plan then execute the categorization phase | `verify-corpus-coverage.sh` exits 0 |
 | G2 Remediate | plan then execute the remediation phase | `ste_gate.py` exits 0 for EVERY batch; approvals sealed |
 | G3 Encode | plan then execute the encoding phase; `encode_rules.py --all --emit` | `check_encode_coverage.py` exits 0 (every non-retain rewrite has a rule) |
-| G4 Reanchor | run the alignment gate, then reanchor against the regenerated store | alignment gate exits 0, then `apply-unnerfs.py --check` reports 0 FAILED / 0 MISSING |
+| G4 Reanchor | build the store round for the target version, revalidate the map rows against it, run the doctrine, coverage and alignment gates, then reanchor | doctrine and alignment gates exit 0, the coverage gate names only rows this milestone will author, then `apply-unnerfs.py --check` reports 0 FAILED / 0 MISSING |
 | G5 Apply | `install.py --prepare`; close CC; `apply-external.bat`; `verify.py` | dual version lines + three content sentinels + apply accounting |
 | G6 Behavioral verify | plan then execute the verification phase | each applied batch shows un-nerfed BEHAVIOR against the LIVE prompt baseline, not just string presence vs stock |
 
