@@ -23,12 +23,15 @@ import time
 # captured the patchers' per-item accounting; the failure patterns are the
 # same per-item markers the installer aborts on.
 CAPTURE_SENTINELS = ["BEGIN TWEAKCC-FIXED OUTPUT", "BEGIN UNNERFCC OUTPUT"]
-# Import the installer's anchored patterns so both gates classify the patcher
-# output identically (an unanchored "failed to " here matched tweakcc-fixed's
+# Reuse the installer's classifier so both gates reach the same verdict for the
+# same patcher output: each BEGIN/END capture block is classified against its
+# OWN patcher's markers (an earlier union-over-log let a tweakcc-only marker
+# fail the unnerfcc block, and an unanchored "failed to " matched tweakcc-fixed's
 # per-prompt description lines and failed a successful apply, 2026-09-01).
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from install import TWEAKCC_FAIL_PATTERNS, UNNERFCC_FAIL_PATTERNS  # noqa: E402
-FAIL_PATTERNS = TWEAKCC_FAIL_PATTERNS + UNNERFCC_FAIL_PATTERNS
+from install import classify_patcher_output  # noqa: E402
+BLOCK_RE = re.compile(r"^[^\n]*----- BEGIN (TWEAKCC-FIXED|UNNERFCC) OUTPUT[^\n]*-----\n(.*?)^[^\n]*----- END \1 OUTPUT[^\n]*-----", re.MULTILINE | re.DOTALL)
+PATCHER_NAME = {"TWEAKCC-FIXED": "tweakcc-fixed", "UNNERFCC": "unnerfcc"}
 
 
 def check_apply_accounting():
@@ -48,12 +51,16 @@ def check_apply_accounting():
         return False, (f"last apply log {latest.name} lacks per-item accounting ({', '.join(missing)}); "
                        "it predates the output-capture installer. Re-run apply-external to record a provable apply.")
     bad = []
-    for line in text.splitlines():
-        if any(re.search(p, line, re.IGNORECASE) for p in FAIL_PATTERNS):
-            bad.append(line.strip())
+    blocks = 0
+    for m in BLOCK_RE.finditer(text):
+        blocks += 1
+        failures, _skipped, _not_found = classify_patcher_output(PATCHER_NAME[m.group(1)], m.group(2))
+        bad.extend(f"{PATCHER_NAME[m.group(1)]}: {s.strip()}" for s in failures)
+    if blocks == 0:
+        return False, f"last apply log {latest.name} has BEGIN markers but no complete BEGIN/END capture block; the apply did not finish."
     if bad:
         return False, f"last apply log {latest.name} carries {len(bad)} failure marker(s), e.g.: {bad[0][:120]}"
-    return True, f"last apply log {latest.name} holds full accounting with no failure markers"
+    return True, f"last apply log {latest.name} holds full accounting ({blocks} capture block(s)) with no failure markers"
 
 
 def _arm_watchdog(max_seconds: float, probe_seconds: float) -> None:

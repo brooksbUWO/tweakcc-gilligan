@@ -46,26 +46,29 @@ def find_project_root(start: pathlib.Path):
     return None
 
 
+def _relative_files(root: pathlib.Path):
+    """Every file under root as a relative POSIX path, skipping IGNORE directories."""
+    files = set()
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in IGNORE]
+        for f in filenames:
+            files.add(pathlib.Path(dirpath, f).relative_to(root).as_posix())
+    return files
+
+
 def drift(dev: pathlib.Path, installed: pathlib.Path):
-    """Return a list of human-readable drift lines (empty when identical)."""
+    """Return a list of human-readable drift lines (empty when byte-identical).
+    Byte comparison per file (filecmp.cmp with shallow=False): a same-size,
+    same-mtime file with different content is still drift."""
     out = []
-
-    def walk(cmp: filecmp.dircmp, rel: str):
-        for n in cmp.left_only:
-            if n not in IGNORE:
-                out.append(f"only in dev:       {rel}{n}")
-        for n in cmp.right_only:
-            if n not in IGNORE:
-                out.append(f"only in installed: {rel}{n}")
-        for n in cmp.diff_files:
-            out.append(f"differs:           {rel}{n}")
-        for n in cmp.funny_files:
-            out.append(f"uncomparable:      {rel}{n}")
-        for n, sub in cmp.subdirs.items():
-            if n not in IGNORE:
-                walk(sub, f"{rel}{n}/")
-
-    walk(filecmp.dircmp(dev, installed, ignore=list(IGNORE)), "")
+    left, right = _relative_files(dev), _relative_files(installed)
+    for rel in sorted(left - right):
+        out.append(f"only in dev:       {rel}")
+    for rel in sorted(right - left):
+        out.append(f"only in installed: {rel}")
+    for rel in sorted(left & right):
+        if not filecmp.cmp(dev / rel, installed / rel, shallow=False):
+            out.append(f"differs:           {rel}")
     return out
 
 

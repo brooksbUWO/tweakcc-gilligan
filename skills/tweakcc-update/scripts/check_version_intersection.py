@@ -227,7 +227,8 @@ def main():
     # The common version is what BOTH patcher projects support, so take the
     # MINIMUM across the upstreams. The local fork catalogs lag upstream and
     # only describe readiness, never the target.
-    if len(upstream_versions) == len(UPSTREAM_COMMIT_SPECS):
+    certain = len(upstream_versions) == len(UPSTREAM_COMMIT_SPECS)
+    if certain:
         target = sort_versions(upstream_versions)[0]
     else:
         target = local_common
@@ -245,9 +246,15 @@ def main():
     # as one: APPLICABLE is what the local clones can patch NOW (min of the fork
     # catalog and the pinned tweakcc-fixed catalog); RESULT is the upstream target.
     print(f"APPLICABLE: newest version the local clones can patch now (fork catalog and pinned tweakcc-fixed catalog) = {local_common}")
-    print(f"RESULT: greatest common version (both patchers' upstream support) = {target}")
-    print(f"npm install -g @anthropic-ai/claude-code@{target}")
-    return 0
+    if certain:
+        print(f"RESULT: greatest common version (both patchers' upstream support) = {target}")
+        print(f"npm install -g @anthropic-ai/claude-code@{target}")
+        return 0
+    # A different label on purpose: install.py --prepare accepts only "RESULT:"
+    # and stops on "RESULT-UNCERTAIN:", so a guess is never recorded as the target.
+    print(f"RESULT-UNCERTAIN: local catalog fallback (an upstream could not be read) = {target}")
+    print("Re-run when the upstream is reachable before installing a version.")
+    return 1
 
 if __name__ == "__main__":
     sys.exit(main())

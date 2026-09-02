@@ -532,11 +532,18 @@ def prepare_stage():
     except Exception as e:
         die(f"Greatest-common-version check failed: {e}",
             "Fix the error above and re-run --prepare; the apply stage must not run without a recorded target version.")
+    # Only a certain RESULT line is accepted. When an upstream probe failed the
+    # script prints RESULT-UNCERTAIN instead (a local-catalog fallback that may
+    # understate the true target); recording that as the target would present
+    # a guess as authoritative, so prepare stops instead.
+    if re.search(r"^RESULT-UNCERTAIN:", version_check_out, re.MULTILINE):
+        die("The version check could not read one or both upstreams; its RESULT is an uncertain local fallback.",
+            "Restore GitHub API access (or wait out the rate limit) and re-run --prepare; do not record an uncertain target.")
     # The RESULT line may carry a parenthetical between the label and "=":
-    # "greatest common version (both patchers' upstream support) = 2.1.257".
-    m = re.search(r"greatest common version[^=\n]*= (\d+\.\d+\.\d+)", version_check_out)
+    # "RESULT: greatest common version (both patchers' upstream support) = 2.1.257".
+    m = re.search(r"^RESULT: greatest common version[^=\n]*= (\d+\.\d+\.\d+)", version_check_out, re.MULTILINE)
     if not m:
-        die("The greatest-common-version check ran but its output did not contain 'greatest common version ... = <ver>'.",
+        die("The greatest-common-version check ran but its output did not contain a 'RESULT: greatest common version ... = <ver>' line.",
             f"check_version_intersection.py output format drifted; raw output above. Fix the parser or the script.")
     greatest_common_version = m.group(1)
 
@@ -716,21 +723,37 @@ UNNERFCC_FAIL_PATTERNS = [r"\[FAILED", r"\[LOST\]", r"UN-NERF\(S\) FAILED TO SPL
                          r"Rules FAILED\s*:\s*[1-9]", r"Missing files\s*:\s*[1-9]"]
 
 
-def check_patcher_output(name, output, fail_patterns):
-    """Die loudly when a patcher's output carries per-item failure markers.
-    'skipped' lines are surfaced as warnings but do not abort: some skips are
-    version-conditional by design; a failure marker never is."""
-    bad = []
-    skipped = []
-    not_found = 0
+# A leading run of ANSI SGR escapes (chalk color, when a caller forces color onto
+# the captured pipe) must not defeat the column-0 anchors above.
+ANSI_SGR_PREFIX = re.compile(r"^(?:\x1b\[[0-9;]*m)+")
+
+PATCHER_FAIL_PATTERNS = {"tweakcc-fixed": TWEAKCC_FAIL_PATTERNS, "unnerfcc": UNNERFCC_FAIL_PATTERNS}
+
+
+def classify_patcher_output(name, output):
+    """Pure classifier shared by the installer and verify.py: returns
+    (failures, skipped, not_found_count) for one patcher's captured output.
+    Lines are matched after stripping a leading ANSI SGR run and trailing
+    whitespace only, so indentation still distinguishes a real column-0 marker
+    from an indented free-text description."""
+    fail_patterns = PATCHER_FAIL_PATTERNS[name]
+    bad, skipped, not_found = [], [], 0
     for line in output.splitlines():
-        s = line.rstrip()
+        s = ANSI_SGR_PREFIX.sub("", line).rstrip()
         if any(re.search(p, s, re.IGNORECASE) for p in fail_patterns):
             bad.append(s)
         elif name == "tweakcc-fixed" and re.search(TWEAKCC_NOTFOUND_PATTERN, s):
             not_found += 1
         elif re.search(TWEAKCC_SKIP_PATTERN if name == "tweakcc-fixed" else r"\bskipped\b", s, re.IGNORECASE) and not re.search(r"already un-nerfed", s, re.IGNORECASE):
             skipped.append(s)
+    return bad, skipped, not_found
+
+
+def check_patcher_output(name, output, fail_patterns=None):
+    """Die loudly when a patcher's output carries per-item failure markers.
+    'skipped' lines are surfaced as warnings but do not abort: some skips are
+    version-conditional by design; a failure marker never is."""
+    bad, skipped, not_found = classify_patcher_output(name, output)
     for s in skipped:
         log(f"  [WARN] {name} skipped item: {s}")
     if not_found:
