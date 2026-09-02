@@ -51,9 +51,10 @@ UPSTREAM_PROBES = {
     "unnerfcc": ("https://github.com/lukehutch/unnerfcc.git", "main"),
 }
 
-# Matches upstream sync-commit subjects like "sync to Claude Code v2.1.235"
-# and "sync prompts to Claude Code v2.1.222".
-SYNC_SUBJECT_RE = re.compile(r"sync(?:\s+prompts)?\s+to\s+Claude Code\s+v(\d+\.\d+\.\d+)", re.IGNORECASE)
+# Matches upstream sync-commit subjects like "sync to Claude Code v2.1.235",
+# "sync prompts to Claude Code v2.1.222", and "support Claude Code v2.1.258"
+# (upstream has no releases; the subject is the only version signal).
+SYNC_SUBJECT_RE = re.compile(r"(?:sync(?:\s+prompts)?\s+to|support)\s+Claude Code\s+v(\d+\.\d+\.\d+)", re.IGNORECASE)
 
 
 def _arm_watchdog(max_seconds: float, probe_seconds: float) -> None:

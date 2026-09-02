@@ -108,7 +108,10 @@ def get_unnerfcc_versions():
 
 UPSTREAM_COMMIT_SPECS = [
     # (repo, subject pattern naming a supported CC version)
-    ("lukehutch/unnerfcc", re.compile(r"sync to Claude Code v(\d+\.\d+\.\d+)")),
+    # Upstream has no releases; its commit subjects name the version, in
+    # three wordings so far: "sync to Claude Code vX", "sync prompts to
+    # Claude Code vX", and (since 2.1.258) "support Claude Code vX".
+    ("lukehutch/unnerfcc", re.compile(r"(?:sync(?:\s+prompts)?\s+to|support)\s+Claude Code\s+v(\d+\.\d+\.\d+)", re.IGNORECASE)),
     ("skrabe/tweakcc-fixed", re.compile(r"\bCC v?(\d+\.\d+\.\d+)\b")),
 ]
 
