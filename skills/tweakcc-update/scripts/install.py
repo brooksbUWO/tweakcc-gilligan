@@ -534,16 +534,20 @@ def prepare_stage():
     try:
         version_check_out = run_cmd([sys.executable, str(version_check_script)])
         log(version_check_out.strip())
+    except subprocess.CalledProcessError as e:
+        # The script exits 1 (so run_cmd raises) when an upstream probe failed
+        # and it printed RESULT-UNCERTAIN, a local-catalog fallback that may
+        # understate the true target. Recording that would present a guess as
+        # authoritative, so prepare stops with the specific remediation.
+        if re.search(r"^RESULT-UNCERTAIN:", e.output or "", re.MULTILINE):
+            log((e.output or "").strip())
+            die("The version check could not read one or both upstreams; its RESULT is an uncertain local fallback.",
+                "Restore GitHub API access (or wait out the rate limit) and re-run --prepare; do not record an uncertain target.")
+        die(f"Greatest-common-version check failed: {e}",
+            "Fix the error above and re-run --prepare; the apply stage must not run without a recorded target version.")
     except Exception as e:
         die(f"Greatest-common-version check failed: {e}",
             "Fix the error above and re-run --prepare; the apply stage must not run without a recorded target version.")
-    # Only a certain RESULT line is accepted. When an upstream probe failed the
-    # script prints RESULT-UNCERTAIN instead (a local-catalog fallback that may
-    # understate the true target); recording that as the target would present
-    # a guess as authoritative, so prepare stops instead.
-    if re.search(r"^RESULT-UNCERTAIN:", version_check_out, re.MULTILINE):
-        die("The version check could not read one or both upstreams; its RESULT is an uncertain local fallback.",
-            "Restore GitHub API access (or wait out the rate limit) and re-run --prepare; do not record an uncertain target.")
     # The RESULT line may carry a parenthetical between the label and "=":
     # "RESULT: greatest common version (both patchers' upstream support) = 2.1.257".
     m = re.search(r"^RESULT: greatest common version[^=\n]*= (\d+\.\d+\.\d+)", version_check_out, re.MULTILINE)
@@ -754,7 +758,7 @@ def classify_patcher_output(name, output):
     return bad, skipped, not_found
 
 
-def check_patcher_output(name, output, fail_patterns=None):
+def check_patcher_output(name, output):
     """Die loudly when a patcher's output carries per-item failure markers.
     'skipped' lines are surfaced as warnings but do not abort: some skips are
     version-conditional by design; a failure marker never is."""
@@ -813,7 +817,7 @@ def apply_stage():
     log("Applying tweakcc-fixed code patches...")
     twk_out = run_cmd(["node", str(dist_mjs), "--apply"], timeout=180,
                       capture_label="TWEAKCC-FIXED OUTPUT")
-    check_patcher_output("tweakcc-fixed", twk_out, TWEAKCC_FAIL_PATTERNS)
+    check_patcher_output("tweakcc-fixed", twk_out)
     log("  [OK] tweakcc-fixed applied successfully (per-item accounting logged, no failure markers)")
 
     # Apply unnerfcc
@@ -828,7 +832,7 @@ def apply_stage():
     else:
         unf_out = run_cmd(["./install.sh"], cwd=str(unnerf_repo), timeout=600,
                           capture_label="UNNERFCC OUTPUT")
-    check_patcher_output("unnerfcc", unf_out, UNNERFCC_FAIL_PATTERNS)
+    check_patcher_output("unnerfcc", unf_out)
     log("  [OK] unnerfcc applied successfully (per-item accounting logged, no failure markers)")
 
     # Write Manifest
