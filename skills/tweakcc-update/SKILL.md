@@ -4,7 +4,7 @@ description: "Use when installing, applying, re-applying, or updating the tweakc
 license: MIT
 allowed-tools: Bash(python ${CLAUDE_SKILL_DIR}/scripts/*)
 metadata:
-  version: 1.4.2
+  version: 1.4.3
 ---
 
 # tweakcc-gilligan: Dual-Patcher Skill for Claude Code

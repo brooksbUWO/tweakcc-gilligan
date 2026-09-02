@@ -754,6 +754,9 @@ TWEAKCC_FAIL_PATTERNS = [r"^patch: .*: failed to ", r"^inline-blob: failed", r"^
                          r"^Failed to read markdown file", r"\[FAILED"]
 # Version-conditional skips worth surfacing (not the free-text descriptions).
 TWEAKCC_SKIP_PATTERN = r"\bskipping\b|^Skipped \d+ up-to-date|^Unresolved placeholder"
+# unnerfcc's summary counter line carries "skipped=N"; a zero count is not a skipped
+# item (2026-09-02: "skipped=0" was logged as "[WARN] skipped item").
+UNNERFCC_SKIP_PATTERN = r"\bskipped\b(?!=0\b)"
 TWEAKCC_NOTFOUND_PATTERN = r"^Could not find system prompt"  # hundreds per run (platform-conditional prompts); counted, not listed
 # "[LOST] <id>: couldNotFind" is patch-prompts.mjs reporting an un-nerf that never
 # reached the bundle; install.sh still exits 0 (2026-09-01: one lost rule passed
@@ -783,7 +786,7 @@ def classify_patcher_output(name, output):
             bad.append(s)
         elif name == "tweakcc-fixed" and re.search(TWEAKCC_NOTFOUND_PATTERN, s):
             not_found += 1
-        elif re.search(TWEAKCC_SKIP_PATTERN if name == "tweakcc-fixed" else r"\bskipped\b", s, re.IGNORECASE) and not re.search(r"already un-nerfed", s, re.IGNORECASE):
+        elif re.search(TWEAKCC_SKIP_PATTERN if name == "tweakcc-fixed" else UNNERFCC_SKIP_PATTERN, s, re.IGNORECASE) and not re.search(r"already un-nerfed", s, re.IGNORECASE):
             skipped.append(s)
     return bad, skipped, not_found
 
