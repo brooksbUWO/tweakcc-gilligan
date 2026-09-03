@@ -21,7 +21,7 @@ A digest-drift FAIL means the sealed approved after-bodies were modified after a
 Every batch's approved revision must be STE-clean.
 
 ```
-python .claude/workspace/scripts/per-batch-remediation/ste_gate.py --revision-dir <batch>/<rev>
+python .claude/workspace/scripts/store-remediation/ste_gate.py --revision-dir <batch>/<rev>
 ```
 
 Run it over all eight batches. Exit 0: all prompts clean or prose-free exempt. Exit 1: any unexplained STE violation, named with file and offending text. Exit 2: usage or config. Exit 3: ceiling.

@@ -4,12 +4,17 @@ description: "Use when installing, applying, re-applying, or updating the tweakc
 license: MIT
 allowed-tools: Bash(python ${CLAUDE_SKILL_DIR}/scripts/*)
 metadata:
-  version: 1.4.4
+  version: 1.5.0
 ---
 
 # tweakcc-gilligan: Dual-Patcher Skill for Claude Code
 
 tweakcc-gilligan customizes the user's own locally installed Claude Code binary on Windows, Linux, and macOS in two stages. It applies `tweakcc-fixed` (code patches, `/clear-screen`, session memory, empty system-reminder suppression) and `unnerfcc` (rewrites of the prompt text strings shipped inside the product binary; raises the default reasoning-effort configuration). It also fills system-reminder overrides from `lobotomized-claude-code`. Everything here operates on plain text strings shipped in the installed product on the user's machine; nothing reads, extracts, or infers model internals.
+
+**Portability warning:** `allowed-tools` is enforced by the Claude Code CLI only.
+Agent SDKs ignore it. If you load this skill via the Python or TypeScript SDK,
+replicate these restrictions in `ClaudeAgentOptions` (Python) or `Options`
+(TypeScript), or the skill will run with unrestricted tools.
 
 ## Core rules (read first)
 
@@ -23,6 +28,18 @@ tweakcc-gilligan customizes the user's own locally installed Claude Code binary 
 | 6 | Do not use git worktrees. Work in the main checkout. |
 | 7 | A new CC version is a MECHANICAL re-patch ([references/version-update.md](references/version-update.md)): the rewrites are already decided and encoded as rules; only stock anchors move. Changing un-nerf CONTENT is a separate job (the "Remediation" section): recipe-driven, run through the GSD phases with `gsd-verifier` gating each one; never force past a failed gate. Never mix the two jobs: mixing them is how a 1-hour patch became a 9-day milestone. |
 | 8 | This skill lives in two locations that must stay byte-identical: the DEV source `tweakcc-gilligan/skills/tweakcc-update/` and the INSTALLED copy `.claude/skills/tweakcc-update/`. After any edit, copy to the other side and run `python scripts/test_skill_mirror_sync.py` (exit 0). |
+
+## Before the first tool call
+
+State a plan before the first tool call. A stated plan is checked against the gate table; an unstated one is rationalized after the fact.
+
+```
+[PLAN]
+Task: <re-apply | version update | remediation>
+Target CC version: <from check_version_intersection.py RESULT, or "not yet known">
+Stage: <prepare | apply | verify | gate G0..G6>
+Proof before moving on: <the exact log line, exit code, or verify.py output that ends this stage>
+```
 
 ## Three tasks: pick one
 
@@ -46,25 +63,35 @@ binary-format table and the recognition precondition for mapping against a new v
 
 ## Remediation (changing the un-nerfs themselves)
 
+This section applies only inside the tweakcc project checkout. The gates below read
+paths that exist only in that workspace (`.claude/workspace/scripts/...`,
+`D:/Data/Programs/AI/Claude/recipes/`, `notes/`). A user who installed the published
+plugin elsewhere has none of those paths; use the "Re-apply to the binary" task and the
+version-update runbook's install steps instead.
+
 Out of scope for a version update. When un-nerf CONTENT changes (new doctrine concept,
 wrong rewrite, missing coverage), the method is recipe-concept-prompt-mapping (most recent
 version in `D:/Data/Programs/AI/Claude/recipes/`): recognition-first against the LIVE
 binary's loaded prompts, per-concept per-file coverage with the `body-invariant` state, and
 verification by behavior. See the "Recognition precondition" section of
-[references/version-update.md](references/version-update.md) for the new-version case. The
-rules dict in `apply-unnerfs.py` is the single source of truth for patch content; the
-doctrine (`notes/tweakcc-goals-concepts-*.md`) is the coverage denominator; the concept-map
-status is recorded in `.claude/workspace/prompt-store/CLAUDE.md`. For mapping dispatches,
-use [references/concept-map-dispatch-prompt.md](references/concept-map-dispatch-prompt.md).
-Never author rewrites from a store cold-read, and never gate a rewrite against stock only:
-a gate that does not compare against the live prompt green-lights regressions (this
-happened; see the 2026-08-28 forensics report).
+[references/version-update.md](references/version-update.md) for the new-version case. For
+mapping dispatches, use
+[references/concept-map-dispatch-prompt.md](references/concept-map-dispatch-prompt.md).
 
-Remediation-scale work runs through the GSD phases. Run `/gsd-new-milestone` to create a
-fresh phase set; do not re-run a prior milestone's phase numbers. Dispatch the GSD skills
-and let `gsd-verifier` gate each phase. Do not write ROADMAP or STATE checkboxes; a phase
-reaches `[x]` only on a `passed` verdict. Read [references/pipeline.md](references/pipeline.md)
-for the full step detail and [references/gates.md](references/gates.md) for the gate
+### Remediation rules
+
+| Rule | Why |
+|---|---|
+| `unnerfcc/rules/<id>.json` (one file per rule id) is the single source of truth for patch content; `apply-unnerfs.py` loads and applies it. | The rules moved to one JSON file per id in Phase 10 (2026-09-02); `apply-unnerfs.py` is the loader, not the store. |
+| Author rewrites only from the LIVE binary's loaded prompts, never from a store cold-read. | A cold-read map was invalidated in 2026-08 and re-done. |
+| Gate a rewrite against the live prompt, never against stock only. | A stock-only gate green-lights regressions (2026-08-28 forensics). |
+| Run `/gsd-new-milestone` for a fresh phase set; never re-run a prior milestone's phase numbers. | Reused phase numbers collide with the prior milestone's artifacts. |
+| Never write ROADMAP or STATE checkboxes by hand. | A phase reaches `[x]` only on a `gsd-verifier` `passed` verdict. |
+| The doctrine (`notes/tweakcc-goals-concepts-*.md`) is the coverage denominator; the concept-map status lives in `.claude/workspace/prompt-store/CLAUDE.md`. | Both are the recorded state that a gate checks against. |
+
+Remediation-scale work runs through the GSD phases. Dispatch the GSD skills and let
+`gsd-verifier` gate each phase. Read [references/pipeline.md](references/pipeline.md) for
+the full step detail and [references/gates.md](references/gates.md) for the gate
 definitions. The milestone's phases carry these seven gates (phase numbers are whatever
 `/gsd-new-milestone` assigns):
 
@@ -86,7 +113,7 @@ seal digest, or mark a phase complete by hand.
 
 | Step | Action | Verify before moving on |
 |---|---|---|
-| 1 | Run `python scripts/install.py --prepare` (safe inside a CC session). | Log shows `tweakcc-fixed pinned to 452f15a`, `Recorded target version @<ver>`, and a dist build. On Windows it also verifies or creates `~/.local/bin/python3.bat`. |
+| 1 | Run `python scripts/install.py --prepare` (safe inside a CC session). | Log shows `Recorded target version @<ver>`, `tweakcc-fixed checked out at <tag> (<sha>) for CC <ver>`, and a dist build. On Windows it also verifies or creates `~/.local/bin/python3.bat`. |
 | 2 | Close ALL Claude Code sessions (terminal and editor). | No `claude.exe` running. |
 | 3 | Run `%USERPROFILE%\.tweakcc-gilligan\apply-external.bat` (Windows) or `~/.tweakcc-gilligan/apply-external.sh` (Unix). | `tweakcc-fixed applied successfully` then `unnerfcc applied successfully`. |
 | 4 | Confirm the result. | `verify.py` prints dual version lines and all three content sources PASS. |
@@ -96,7 +123,7 @@ seal digest, or mark a phase complete by hand.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `dist/index.mjs missing` | `--apply` ran without a completed `--prepare`. | Run `--prepare` first. |
-| `claude module not found in any of the binary modules` | tweakcc-fixed commit does not match the target binary format. | See the binary-format section of [references/version-update.md](references/version-update.md); the pin (`452f15a`) must match the target. |
+| `claude module not found in any of the binary modules` | tweakcc-fixed commit does not match the target binary format. | See the binary-format section of [references/version-update.md](references/version-update.md); `--prepare` selects the release that catalogued the target, so this row now means the prepare log's `checked out at` line was not produced by the current `--prepare` (re-run it) or `tweakcc-fixed` re-catalogued the target on a different format. |
 | `BUN_FORMAT_INCOMPATIBLE` / cannot determine module struct size | unnerfcc's parser hit an ambiguous Bun layout. | This is a real unnerfcc bug; fix `engine/bun-binary.mjs` in the unnerfcc dev repo, do not chase it in the installer. |
 | `unrecognized binary format (neither ELF nor 64-bit Mach-O)` on Windows | An upstream engine sync clobbered the fork's PE support (upstream parses ELF/Mach-O only). | Re-port PE support into `engine/bun-binary.mjs` (runbook step 3's Windows-support check names the pieces). |
 | Unpack succeeds, then `Is a directory` / EISDIR in classify or gen-catalog | Pipeline scripts are older than the engine interface (code-split engine unpacks to a directory; old scripts expect one cli.js). | Sync `upgrade.sh` and `scripts/*.mjs` from upstream too, then re-apply the fork's Windows deltas (runbook step 3). |
@@ -167,7 +194,7 @@ patch the binary directly and never appear there. verify.py tees its own output 
   python scripts/check_version_intersection.py
   ```
   Two labeled lines: `APPLICABLE` is the newest version the local clones can patch now
-  (minimum of the fork catalog and the pinned tweakcc-fixed catalog); `RESULT` is the
+  (minimum of the fork catalog and the local tweakcc-fixed catalog); `RESULT` is the
   greatest common version the two upstreams support (commit subjects and catalog filenames,
   higher signal wins). When both upstream signals resolved, the final output line is the
   paste-ready `npm install -g @anthropic-ai/claude-code@<target>` command; surface it to the
@@ -196,7 +223,7 @@ python scripts/test_termination_contract.py
 ## Runtime Layout
 
 - `~/.tweakcc-gilligan/` (Override via `TWEAKCC_GILLIGAN_HOME` environment variable):
-  - `repos/`: Working clones of `tweakcc-fixed`, `unnerfcc`, and `lobotomized-claude-code`. `unnerfcc` and `lobotomized-claude-code` fast-forward to their remotes on every prepare. `tweakcc-fixed` does NOT. `pin_ref` in `prepare_stage` pins it to `452f15a` (CC 2.1.258 catalog, code-split extractor). Thus prepare cannot advance it to a release whose extractor does not match the target binary format.
+  - `repos/`: Working clones of `tweakcc-fixed`, `unnerfcc`, and `lobotomized-claude-code`. All three fast-forward to their remotes on every prepare; `tweakcc-fixed` is then checked out at the release that catalogued the recorded target (see the binary-format section of the runbook), so its extractor matches the target binary format.
   - `logs/`: Timestamped installation logs and active PID tracking.
   - `manifest.json`: Installation record: the installed-at time, the `claude` launcher path that `shutil.which("claude")` resolves (on Windows this is the npm `claude.CMD` shim, not the patched `claude.exe`; `verify.py` prints the resolved binary), and the `tweakcc-fixed` and `unnerfcc` commit SHAs.
   - `target_version.txt`: The Claude Code version the prepare stage recorded and the apply stage requires.
@@ -213,3 +240,16 @@ To return the binary to its un-modified published state:
 ```bash
 npm install -g @anthropic-ai/claude-code@<version>
 ```
+
+## Core rules (restated)
+
+| # | Rule |
+|---|---|
+| 1 | Run `--prepare` before `--apply`. `--apply` does not build; it needs the dist that `--prepare` produces. A bare `--apply` on a fresh clone dies with "dist/index.mjs missing". |
+| 2 | The apply runs OUTSIDE Claude Code with ALL sessions closed. A running `claude.exe` locks the binary. |
+| 3 | The extractor commit must match the target binary format (see [references/version-update.md](references/version-update.md), binary-format section). Wrong format = "claude module not found in any of the binary modules" (tweakcc-fixed) or "BUN_FORMAT_INCOMPATIBLE / struct-size ambiguity" (unnerfcc). |
+| 4 | One clone per repo. Never create a second copy, snapshot, branch-named dir, or zip of a repo. Duplicates are the top failure source: edits land in one copy, get committed from another, and drift. |
+| 5 | Never hand-edit the runtime clones in `~/.tweakcc-gilligan/repos/`. They are disposable; `--prepare` rebuilds them. Edit and commit source only in its one dev location, then let the installer clone fresh from the remote. |
+| 6 | Do not use git worktrees. Work in the main checkout. |
+| 7 | A new CC version is a MECHANICAL re-patch ([references/version-update.md](references/version-update.md)): the rewrites are already decided and encoded as rules; only stock anchors move. Changing un-nerf CONTENT is a separate job (the "Remediation" section): recipe-driven, run through the GSD phases with `gsd-verifier` gating each one; never force past a failed gate. Never mix the two jobs: mixing them is how a 1-hour patch became a 9-day milestone. |
+| 8 | This skill lives in two locations that must stay byte-identical: the DEV source `tweakcc-gilligan/skills/tweakcc-update/` and the INSTALLED copy `.claude/skills/tweakcc-update/`. After any edit, copy to the other side and run `python scripts/test_skill_mirror_sync.py` (exit 0). |

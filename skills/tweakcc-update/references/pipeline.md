@@ -11,8 +11,8 @@ A remediation is a new GSD milestone. Run `/gsd-new-milestone` to create the pha
 | Gate | Phase role | Script | Passes only when |
 |---|---|---|---|
 | G0 Sync | pre-phase sync | `unnerfcc/engine/extract-prompts.mjs` (via `upgrade.sh`) | new stock corpus extracted from the binary; checksum diff of changed/added/removed prompts recorded |
-| G1 Categorize | categorization phase | `.claude/workspace/scripts/verify-corpus-coverage.sh` | coverage script exits 0 (every corpus file mapped to one batch or the exclusion list) |
-| G2 Remediate | remediation phase | `.claude/workspace/scripts/per-batch-remediation/ste_gate.py --revision-dir <rev>` per batch | `ste_gate.py` exits 0 for EVERY batch; Codex review clean; user approval recorded, seal digest matches |
+| G1 Categorize | categorization phase | `.claude/workspace/scripts/corpus-categorization/verify-corpus-coverage.sh` | coverage script exits 0 (every corpus file mapped to one batch or the exclusion list) |
+| G2 Remediate | remediation phase | `.claude/workspace/scripts/store-remediation/ste_gate.py --revision-dir <rev>` per batch | `ste_gate.py` exits 0 for EVERY batch; Codex review clean; user approval recorded, seal digest matches |
 | G3 Encode | encoding phase | `encode_rules.py --all --emit`, then `check_encode_coverage.py` | encoder gates pass (no digest drift); every non-retain rewrite has a rule (coverage check exits 0) |
 | G4 Reanchor | encoding phase | `.claude/workspace/scripts/doctrine-coverage/doctrine_coverage_check.py`, `.claude/workspace/scripts/concept-map/map_coverage_gate.py` (governed-set coverage, names the uncovered rows), `.claude/workspace/scripts/alignment-gate/alignment_gate.py`, then `reanchor_engine.py`, `apply-unnerfs.py --check` | alignment gate exits 0 (no STALE-ANCHOR, and no UNEXPLAINED-DIFF when a live extract is supplied via `--live`), then `apply_unnerfs_check` reports 0 FAILED / 0 MISSING against the genuine binary |
 | G5 Apply | encoding phase | `install.py --prepare`; close CC; `apply-external.bat`; `verify.py` | dual version lines print; three content sentinels present |
@@ -24,15 +24,9 @@ The target version is the RESULT line of `check_version_intersection.py`: the mi
 the two patcher projects' UPSTREAM-supported versions. The local fork catalogs are the
 READINESS report (what is installable before the gap-closure steps), never the target.
 
-The checked-out `tweakcc-fixed` commit must match the target binary format:
-
-- Target 2.1.241 or less (OLD single-module Bun format): `tweakcc-fixed` at `2dc353c` (v2.7.38) or earlier.
-- Target 2.1.246 or more (CODE-SPLIT Bun format): `tweakcc-fixed` at `890c928` or later.
-
-`prepare_stage` pins `tweakcc-fixed` via `pin_ref` (currently `2dc353c`). Move the pin only
-together with the runbook's engine-sync step: a 2.1.246+ target needs the fork's
-`unnerfcc/engine/` code-split-capable AND the pin at `890c928+`; either alone fails with
-the other tool's format error.
+The checked-out `tweakcc-fixed` commit must match the target binary format. `--prepare` derives the `tweakcc-fixed` checkout from the target: the newest release tag whose newest `data/prompts/prompts-<ver>.json` is the target (that release catalogued the target binary, so its extractor parsed that format), else the last commit that touched the target's catalog file (`install.select_tweakcc_ref`). There is no hard-coded commit. A target that `tweakcc-fixed` never catalogued stops the prepare with a remediation message.
+The fork's `unnerfcc/engine/` must match the same format (the runbook's engine-sync step);
+a code-split target with an old-format engine fails with unnerfcc's format error.
 
 ## Prompt source
 

@@ -10,7 +10,7 @@ separate Remediation job in SKILL.md; never mix the two.
 1. **Version check.** Run `python scripts/check_version_intersection.py`. It prints two
    distinct numbers on two labeled lines:
    - `APPLICABLE`: the newest version the local clones can patch NOW (minimum of the fork
-     catalog and the pinned tweakcc-fixed catalog).
+     catalog and the local tweakcc-fixed catalog).
    - `RESULT`: the TARGET (minimum of the two upstreams' supported versions, read from
      commit subjects AND from the `data/prompts/prompts-<ver>.json` filenames at each
      upstream HEAD; the higher signal wins so a new subject wording cannot under-report).
@@ -36,8 +36,8 @@ separate Remediation job in SKILL.md; never mix the two.
      or rule content: `scripts/apply-unnerfs.py`, `system-prompts/`, `data/prompts/`. An
      engine-only sync strands the pipeline on the old interface. The code-split engine
      unpacks to a directory. The old scripts expect one cli.js and die with EISDIR ("Is a
-     directory") after a good unpack. Then update the `pin_ref` in `install.py` to the
-     tweakcc-fixed commit that matches the format.
+     directory") after a good unpack. `install.py --prepare` then selects the `tweakcc-fixed`
+     release that catalogued the target on its own (binary-format section below).
    - After each engine sync, make sure that the fork's Windows support survived. Upstream's
      engine parses ELF and Mach-O only. `grep -c "findBunSectionPE\|repackPE"
      engine/bun-binary.mjs` must be nonzero. If it is zero, re-port the Windows pieces: the
@@ -127,7 +127,7 @@ separate Remediation job in SKILL.md; never mix the two.
    - Build the new store round: `node unnerfcc/scripts/sync-version.mjs <target> --target
      <scratch> --no-manifest`, then `python .claude/workspace/scripts/store-provenance/build_queue.py
      --prompts-dir <scratch> --out <scratch>/queue.csv`, then
-     `python .claude/workspace/scripts/per-batch-remediation/remediate.py materialize --queue
+     `python .claude/workspace/scripts/store-remediation/remediate.py materialize --queue
      <scratch>/queue.csv --prompts-dir <scratch> --out .claude/workspace/prompt-store --batch
      binary-faithful --revision r<NNNN>`. Delete `<scratch>` afterward (a second copy of a
      store round outside `.backups/` is a rule 9 violation and inflates the repo).
@@ -158,10 +158,10 @@ catalog file (`data/prompts/prompts-<ver>.json`) in `tweakcc-fixed` does not pro
 checked-out code can patch that binary. The catalog and the extractor are separate. Match
 the extractor to the target binary format, not the catalog.
 
-The checked-out `tweakcc-fixed` commit must match the target binary format:
-
-- Target 2.1.241 or less (OLD single-module Bun format): use `tweakcc-fixed` at `2dc353c` (v2.7.38) or earlier.
-- Target 2.1.246 or more (CODE-SPLIT Bun format): use `tweakcc-fixed` at `890c928` or later.
+The checked-out `tweakcc-fixed` commit must match the target binary format. Known eras, for
+diagnosis only (the selection below needs no era table): 2.1.241 and earlier use the OLD
+single-module Bun format (releases up to v2.7.38); 2.1.246 and later use the CODE-SPLIT format
+(v2.8.0 and later).
 
 A format mismatch fails the apply. The extractor finds no claude module and stops with this error:
 
@@ -169,15 +169,14 @@ A format mismatch fails the apply. The extractor finds no claude module and stop
 Error: Could not extract JS from native binary: ...claude.exe (claude module not found in any of the binary modules)
 ```
 
-When you see that error, run `git -C ~/.tweakcc-gilligan/repos/tweakcc-fixed log -1 --oneline`.
-Compare the commit against the target format. The cause is the format mismatch. Do not edit
-`unnerfcc`, rebuild, or delete `dist/`.
+When you see that error, run `git -C ~/.tweakcc-gilligan/repos/tweakcc-fixed log -1 --oneline`
+and compare it with the `tweakcc-fixed checked out at <tag> (<sha>) for CC <ver>` line of the
+most recent prepare log. The cause is the format mismatch. Do not edit `unnerfcc`, rebuild, or
+delete `dist/`.
 
-The `pin_ref` argument in `install.py` `prepare_stage` (currently `452f15a`, "prompts:
-catalogue CC 2.1.258", CODE-SPLIT format) enforces the match. Change the pin ONLY together
-with the engine-sync step above: the pin, the fork's `unnerfcc/engine/` state, and the
-target version must all agree on one binary format. Moving the pin alone trades one format
-error for the other.
+`--prepare` derives the `tweakcc-fixed` checkout from the target: the newest release tag whose newest `data/prompts/prompts-<ver>.json` is the target (that release catalogued the target binary, so its extractor parsed that format), else the last commit that touched the target's catalog file (`install.select_tweakcc_ref`). There is no hard-coded commit. A target that `tweakcc-fixed` never catalogued stops the prepare with a remediation message.
+The checkout, the fork's `unnerfcc/engine/` state, and the target version must agree on one
+binary format; the engine-sync step above keeps the engine side current.
 
 ## Recognition precondition and version-delta bridge (mapping against a NEW CC version)
 

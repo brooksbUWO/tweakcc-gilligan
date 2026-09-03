@@ -58,12 +58,11 @@ def get_tweakcc_versions():
     script_dir = pathlib.Path(__file__).resolve().parent
     gilligan_home = pathlib.Path(os.environ.get("TWEAKCC_GILLIGAN_HOME") or pathlib.Path.home())
     # The installer clones tweakcc-fixed into the runtime workspace
-    # (~/.tweakcc-gilligan/repos/tweakcc-fixed), PINNED to v2.7.38 (2dc353c).
-    # Read that pinned clone's catalog so the intersection reflects the version
-    # the patcher can actually apply. The GitHub API fallback below reads the
-    # UNPINNED (latest) tweakcc-fixed catalog, which lists code-split versions
-    # the pinned v2.7.38 extractor cannot patch; run --prepare first so the
-    # pinned clone exists and this local path is used.
+    # (~/.tweakcc-gilligan/repos/tweakcc-fixed). --prepare fast-forwards it to
+    # origin/main before this check runs, then checks out the release that
+    # catalogued the chosen target (install.select_tweakcc_ref), so the local
+    # catalog set here is the full upstream set. The GitHub API fallback below
+    # reads the same set when no clone exists yet.
     candidate_dirs = [
         gilligan_home / ".tweakcc-gilligan" / "repos" / "tweakcc-fixed" / "data" / "prompts",
     ]
@@ -138,7 +137,7 @@ def get_upstream_head_support():
     the catalog filenames at HEAD. The higher of the two wins, so a new subject
     wording cannot under-report as long as the catalog file exists.
 
-    The local catalogs only say what the pinned/forked clones can install NOW;
+    The local catalogs only say what the local clones can install NOW;
     upstream support lands long before it lands in this fork's catalog, so the
     catalog intersection alone understates the real ceiling.
     Returns {repo: (version, evidence) | None when neither signal resolves}.
@@ -244,8 +243,8 @@ def main():
 
     # Two distinct numbers, printed on two labeled lines so they cannot be read
     # as one: APPLICABLE is what the local clones can patch NOW (min of the fork
-    # catalog and the pinned tweakcc-fixed catalog); RESULT is the upstream target.
-    print(f"APPLICABLE: newest version the local clones can patch now (fork catalog and pinned tweakcc-fixed catalog) = {local_common}")
+    # catalog and the local tweakcc-fixed catalog); RESULT is the upstream target.
+    print(f"APPLICABLE: newest version the local clones can patch now (fork catalog and local tweakcc-fixed catalog) = {local_common}")
     if certain:
         print(f"RESULT: greatest common version (both patchers' upstream support) = {target}")
         print(f"npm install -g @anthropic-ai/claude-code@{target}")
