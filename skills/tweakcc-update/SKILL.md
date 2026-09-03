@@ -4,7 +4,7 @@ description: "Use when installing, applying, re-applying, or updating the tweakc
 license: MIT
 allowed-tools: Bash(python ${CLAUDE_SKILL_DIR}/scripts/*)
 metadata:
-  version: 1.4.3
+  version: 1.4.4
 ---
 
 # tweakcc-gilligan: Dual-Patcher Skill for Claude Code
@@ -198,7 +198,7 @@ python scripts/test_termination_contract.py
 - `~/.tweakcc-gilligan/` (Override via `TWEAKCC_GILLIGAN_HOME` environment variable):
   - `repos/`: Working clones of `tweakcc-fixed`, `unnerfcc`, and `lobotomized-claude-code`. `unnerfcc` and `lobotomized-claude-code` fast-forward to their remotes on every prepare. `tweakcc-fixed` does NOT. `pin_ref` in `prepare_stage` pins it to `452f15a` (CC 2.1.258 catalog, code-split extractor). Thus prepare cannot advance it to a release whose extractor does not match the target binary format.
   - `logs/`: Timestamped installation logs and active PID tracking.
-  - `manifest.json`: Installation record, target binary path, and commit SHAs.
+  - `manifest.json`: Installation record: the installed-at time, the `claude` launcher path that `shutil.which("claude")` resolves (on Windows this is the npm `claude.CMD` shim, not the patched `claude.exe`; `verify.py` prints the resolved binary), and the `tweakcc-fixed` and `unnerfcc` commit SHAs.
   - `target_version.txt`: The Claude Code version the prepare stage recorded and the apply stage requires.
   - `install.lock`: Active operation lockfile. It self-clears when older than four hours.
 - `~/.tweakcc/`:

@@ -40,7 +40,7 @@ the other tool's format error.
 
 ## One clone per repo
 
-`unnerfcc` has one dev copy at `D:/Data/Programs/AI/Claude/Projects/tweakcc/unnerfcc`, tracking `brooksbUWO/unnerfcc`. The installer clones repos fresh into `~/.tweakcc-gilligan/repos/` on every prepare; those clones are disposable and must not be hand-edited. Never create a second copy, snapshot, branch-named directory, or zip of a repo. The encode and reanchor tooling reads the single dev copy; a duplicate lets edits land in one copy and get committed from another.
+`unnerfcc` has one dev copy at `D:/Data/Programs/AI/Claude/Projects/tweakcc/unnerfcc`, tracking `brooksbUWO/unnerfcc`. The installer keeps the runtime clones in `~/.tweakcc-gilligan/repos/`. On every prepare it fetches and fast-forwards `unnerfcc` and `lobotomized-claude-code` to their remotes, resets `tweakcc-fixed` to the pinned commit, and clones fresh only when a clone is missing. Those clones are disposable and must not be hand-edited. Never create a second copy, snapshot, branch-named directory, or zip of a repo. The encode and reanchor tooling reads the single dev copy; a duplicate lets edits land in one copy and get committed from another.
 
 ## When a gate does not pass
 
