@@ -512,22 +512,28 @@ def item_rowset(before_names: set, after_names: set, queue_names: set) -> tuple[
 
 
 def item_per_prompt_fit(rows_prose: dict, glossary_terms: dict, twin_groups: dict) -> tuple[bool, str]:
-    """rows_prose: {row: prose}. twin_groups: {row: representative_row} so a
-    twin pair counts as one row."""
+    """rows_prose: {row: prose}. twin_groups: {row: representative_row}.
+    A twin pair counts as one row.
+
+    The item counts one sentence, not one term. To count, a sentence must
+    have 8 or more words and a match of a canonical glossary text. For the
+    comparison, runs of whitespace become one space, the ends lose their
+    whitespace, and letter case is ignored. When one such sentence is in 3
+    or more rows, the item fails."""
     counts: dict[str, set] = {}
     for row, prose in rows_prose.items():
         rep = twin_groups.get(row, row)
         for sent in _SENTENCE_SPLIT.split(prose):
             words = sent.split()
-            if not sent.strip() or len(words) < 8:
+            if len(words) < 8:
                 continue
-            for term_id, entry in glossary_terms.items():
-                if phrase_search(entry["text"], sent):
-                    counts.setdefault(term_id, set()).add(rep)
-    failures = [tid for tid, reps in counts.items() if len(reps) >= 3]
+            if any(phrase_search(e["text"], sent) for e in glossary_terms.values()):
+                counts.setdefault(" ".join(words).lower(), set()).add(rep)
+    failures = sorted((key, sorted(reps)) for key, reps in counts.items() if len(reps) >= 3)
     if failures:
-        return False, f"canonical term(s) repeated across 3+ rows: {sorted(failures)}"
-    return True, "no canonical term repeats across 3 or more rows"
+        parts = [f"{key[:80]!r} in {reps}" for key, reps in failures]
+        return False, "term sentence(s) repeated across 3+ rows: " + "; ".join(parts)
+    return True, "no term sentence repeats across 3 or more rows"
 
 
 # --- main --------------------------------------------------------------

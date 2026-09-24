@@ -36,7 +36,7 @@ Each row of an authored store revision must pass nine items, not STE alone.
 python .claude/skills/tweakcc-update/scripts/store-remediation/authoring_gate.py --revision-dir <rev> --rules-dir <rules> --glossary <glossary.json> [--files <a.md,b.md>] [--list-points]
 ```
 
-Row items, one per row in scope: placeholder parity, the splice frame, the code exemption, the carry-forward of every un-nerf point, the glossary, the header rule, and twin consistency. Revision items, with no `--files` scope: the row-name set across `before`, `after`, and the batch queue, and the per-prompt fit of a canonical term across three or more rows.
+Row items, one per row in scope: placeholder parity, the splice frame, the code exemption, the carry-forward of every un-nerf point, the glossary, the header rule, and twin consistency. Revision items, with no `--files` scope: the row-name set across `before`, `after`, and the batch queue, and the per-prompt fit rule. If one sentence of eight or more words with a canonical term repeats in three or more rows, that rule fails.
 
 Exit 0: every item passes. Exit 1: one or more items fail. Exit 2: a usage or input error, found before any item runs. Exit 3: the watchdog fired.
 

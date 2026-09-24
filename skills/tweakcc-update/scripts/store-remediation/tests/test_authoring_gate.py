@@ -799,6 +799,109 @@ class TestPerPromptFit(unittest.TestCase):
         self.assertIn("PASS per-prompt-fit", out)
 
 
+# Contract item S1 of reviews/sweep-addendum.txt. The gate counts one
+# sentence, not one term.
+SWEEP_GLOSSARY = {
+    "schema": 1,
+    "terms": {
+        **TERM_GLOSSARY["terms"],
+        "reader-can-act": {
+            "text": "the reader can act",
+            "means": "the reader can do the next step",
+            "variants": [],
+        },
+    },
+}
+
+
+def sweep_rows(bodies: list) -> dict:
+    """Give each rewrite body its own row with a different stock body."""
+    return {f"row{i}.md": (FRONTMATTER + f"Stock body {i}.\n", FRONTMATTER + body + "\n")
+            for i, body in enumerate(bodies)}
+
+
+def fit_line(test, out: str) -> str:
+    """Return the one per-prompt-fit line of the gate output."""
+    found = [ln for ln in out.splitlines()
+             if ln.startswith(("PASS per-prompt-fit", "FAIL per-prompt-fit"))]
+    test.assertEqual(len(found), 1, out)
+    return found[0]
+
+
+class TestPerPromptFitSweep(unittest.TestCase):
+    def _gate(self, rows: dict, glossary: dict = TERM_GLOSSARY):
+        with tempfile.TemporaryDirectory() as td:
+            paths = make_revision(Path(td), rows=rows, glossary=glossary)
+            p = run(base_argv(paths))
+        return p, p.stdout + p.stderr
+
+    def test_s1a_different_sentences_one_term_three_rows_pass(self):
+        rows = sweep_rows([
+            "Write the summary in plain English for every new reader today.",
+            "Keep each error message in plain English so users understand it.",
+            "The final report uses plain English and short direct sentences throughout.",
+        ])
+        p, out = self._gate(rows)
+        line = fit_line(self, out)
+        self.assertTrue(line.startswith("PASS per-prompt-fit"), line)
+        self.assertEqual(p.returncode, 0, out)
+
+    def test_s1b_different_sentences_three_terms_five_rows_pass(self):
+        rows = sweep_rows([
+            "Write each answer in plain English for the person who asked it. "
+            "Always lead with the result before you give any of the details.",
+            "Use plain English in the status line at the top of the page. "
+            "Lead with the result so the team sees the outcome at once. "
+            "Check that the reader can act on each step without extra help.",
+            "Plain English keeps the commit message clear for the next maintainer here. "
+            "In a bug report, lead with the result and then list the steps. "
+            "Write the plan so the reader can act on it with no open question.",
+            "Explain the test failure in plain English before you propose a fix. "
+            "Lead with the result of the search, then show the matching files. "
+            "Give the path so the reader can act on the finding right away.",
+            "Describe the risk in plain English and name the file it affects. "
+            "Each summary must show that the reader can act on what it says.",
+        ])
+        p, out = self._gate(rows, SWEEP_GLOSSARY)
+        line = fit_line(self, out)
+        self.assertTrue(line.startswith("PASS per-prompt-fit"), line)
+        self.assertEqual(p.returncode, 0, out)
+
+    def test_s1c_same_sentence_case_and_space_differ_three_rows_fails(self):
+        rows = sweep_rows([
+            "Write the whole summary in plain English for each new reader.",
+            "WRITE the whole  summary in plain English for each   new reader.",
+            "write The Whole summary in plain English\tfor each new READER.",
+        ])
+        p, out = self._gate(rows)
+        line = fit_line(self, out)
+        self.assertTrue(line.startswith("FAIL per-prompt-fit"), line)
+        for name in ("row0.md", "row1.md", "row2.md"):
+            self.assertIn(name, line)
+        self.assertEqual(p.returncode, 1, out)
+
+    def test_s1d_same_sentence_twin_pair_and_one_row_passes(self):
+        sentence = FRONTMATTER + "Write the whole summary in plain English for each new reader.\n"
+        rows = {
+            "a.md": (TWIN_STOCK, sentence),
+            "b.md": (TWIN_STOCK, sentence),
+            "c.md": (FRONTMATTER + "Stock body c.\n", sentence),
+        }
+        p, out = self._gate(rows)
+        self.assertIn("PASS twins a.md", out)
+        self.assertIn("PASS twins b.md", out)
+        line = fit_line(self, out)
+        self.assertTrue(line.startswith("PASS per-prompt-fit"), line)
+        self.assertEqual(p.returncode, 0, out)
+
+    def test_s1e_same_seven_word_sentence_three_rows_passes(self):
+        rows = sweep_rows(["Write the summary in plain English now."] * 3)
+        p, out = self._gate(rows)
+        line = fit_line(self, out)
+        self.assertTrue(line.startswith("PASS per-prompt-fit"), line)
+        self.assertEqual(p.returncode, 0, out)
+
+
 class TestScope(unittest.TestCase):
     def test_scope_failing_row_outside_files_leaves_exit_0(self):
         rows = {
