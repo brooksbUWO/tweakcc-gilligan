@@ -613,7 +613,7 @@ def item_rowset(before_names: set, after_names: set, queue_names: set) -> tuple[
 
 def item_per_prompt_fit(rows_prose: dict, glossary_terms: dict, twin_groups: dict) -> tuple[bool, str]:
     """rows_prose: {row: prose}. twin_groups: {row: representative_row}.
-    A twin pair counts as one row.
+    A twin group of any size counts as one row.
 
     The item counts one unit, not one term. text_units splits the prose at
     the sentence pattern and at each line break, and it removes a list
@@ -793,9 +793,13 @@ def run_gate(revision_dir: Path, rules_dir: Path, glossary_path: Path,
             lines.append(f"FAIL rowset: {detail}")
             failed += 1
 
+        # _find_twins links each group of any size in one ring. Walk the whole
+        # ring, so every member maps to the same representative row.
         twin_groups = {}
-        for row, twin_row in twins.items():
-            rep = min(row, twin_row)
+        for row in twins:
+            rep, nxt = row, twins[row]
+            while nxt != row:
+                rep, nxt = min(rep, nxt), twins[nxt]
             twin_groups[row] = rep
         ok, detail = item_per_prompt_fit(rows_prose, glossary_terms, twin_groups)
         if ok:

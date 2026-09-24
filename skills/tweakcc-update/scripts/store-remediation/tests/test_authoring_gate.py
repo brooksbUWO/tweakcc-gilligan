@@ -1306,5 +1306,45 @@ class TestRound1RemovedUnitExemption(unittest.TestCase):
         self.assertEqual(failures, [], "\n".join(failures))
 
 
+class TestRound2TwinGroups(unittest.TestCase):
+    """R2-1: a twin group of any size counts as one row in per-prompt-fit."""
+
+    SENTENCE = FRONTMATTER + "Write the whole summary in plain English for each new reader.\n"
+
+    def _gate(self, rows: dict):
+        with tempfile.TemporaryDirectory() as td:
+            paths = make_revision(Path(td), rows=rows, glossary=TERM_GLOSSARY)
+            p = run(base_argv(paths))
+        return p, p.stdout + p.stderr
+
+    def _triplet(self, after=None):
+        after = after or {}
+        return {name: (TWIN_STOCK, after.get(name, self.SENTENCE)) for name in ("a.md", "b.md", "c.md")}
+
+    def test_r2_1a_triplet_and_one_row_passes(self):
+        rows = self._triplet()
+        rows["d.md"] = (FRONTMATTER + "Stock body d.\n", self.SENTENCE)
+        p, out = self._gate(rows)
+        line = fit_line(self, out)
+        self.assertTrue(line.startswith("PASS per-prompt-fit"), line)
+        self.assertEqual(p.returncode, 0, out)
+
+    def test_r2_1b_triplet_and_two_rows_fails_and_names_the_sentence(self):
+        rows = self._triplet()
+        rows["d.md"] = (FRONTMATTER + "Stock body d.\n", self.SENTENCE)
+        rows["e.md"] = (FRONTMATTER + "Stock body e.\n", self.SENTENCE)
+        p, out = self._gate(rows)
+        line = fit_line(self, out)
+        self.assertTrue(line.startswith("FAIL per-prompt-fit"), line)
+        self.assertIn("write the whole summary in plain english", line.lower())
+        self.assertEqual(p.returncode, 1, out)
+
+    def test_r2_1d_triplet_with_one_different_rewrite_fails_twins(self):
+        rows = self._triplet({"c.md": FRONTMATTER + "Do the task now.\n"})
+        p, out = self._gate(rows)
+        self.assertRegex(out, r"FAIL twins [abc]\.md")
+        self.assertEqual(p.returncode, 1, out)
+
+
 if __name__ == "__main__":
     unittest.main()
