@@ -354,5 +354,47 @@ class TestHardening(unittest.TestCase):
         self.assertIn("--watchdog-probe", p.stdout)
 
 
+class TestRound1SpanOrder(unittest.TestCase):
+    """R1-4: the gate blanks the preserved spans of a body longest first.
+
+    The body holds two nested preserved spans. The long span holds the short
+    span and one more banned modal. The result must not change with the
+    order of the two spans in ste.json.
+    """
+
+    LONG_SPAN = "Quote: you should keep the token and you would lock it."
+    SHORT_SPAN = "you should keep the token"
+    BODY = "The system shows the git status once.\n" + LONG_SPAN + "\n"
+
+    def _run_order(self, spans):
+        with tempfile.TemporaryDirectory() as td:
+            rev = make_revision(Path(td), {"nested.md": self.BODY},
+                                ste_json={"preserved_spans": {"nested.md": spans}})
+            p = run([GATE, "--revision-dir", str(rev)])
+        assert_gate_ran(self, p)
+        return p
+
+    def test_long_span_first_exits_0(self):
+        # The long span is first in the list. The gate blanks all of it, and
+        # no violation stays.
+        p = self._run_order([self.LONG_SPAN, self.SHORT_SPAN])
+        self.assertEqual(p.returncode, 0, f"stdout={p.stdout!r} stderr={p.stderr!r}")
+        self.assertIn("PASS nested.md", p.stdout)
+
+    def test_short_span_first_exits_0(self):
+        # The short span is first in the list. The long span must still be
+        # blanked in full, so the modal outside the short span is exempt.
+        p = self._run_order([self.SHORT_SPAN, self.LONG_SPAN])
+        self.assertEqual(p.returncode, 0, f"stdout={p.stdout!r} stderr={p.stderr!r}")
+        self.assertIn("PASS nested.md", p.stdout)
+        self.assertNotIn("FAIL nested.md", p.stdout)
+
+    def test_both_orders_give_the_same_output(self):
+        # The two list orders give the same exit code and the same stdout.
+        a = self._run_order([self.LONG_SPAN, self.SHORT_SPAN])
+        b = self._run_order([self.SHORT_SPAN, self.LONG_SPAN])
+        self.assertEqual((a.returncode, a.stdout), (b.returncode, b.stdout))
+
+
 if __name__ == "__main__":
     unittest.main()

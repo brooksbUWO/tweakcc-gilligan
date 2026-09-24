@@ -12,6 +12,8 @@ ASD-STE100 Simplified Technical English was really applied:
      recorded in <revision-dir>/writing-quality/ste.json. Exemption is applied
      by blanking each preserved span out of the body, then re-linting the
      residue: a violation that survives the blanking is unexplained and FAILS.
+     The gate blanks the preserved spans longest first. Thus the order of the
+     spans in ste.json does not change the result.
   3. LOUD FAILURE: per-item PASS / FAIL / EXEMPT lines, each FAIL names the
      file, the ste_lint rule bucket, and quotes the offending text. Pass / fail
      / exempt counts are summarized. No silent partial success.
@@ -121,8 +123,10 @@ def evaluate(ste, name: str, body: str, spans: list) -> dict:
         return {"verdict": "EXEMPT", "detail": "no sentence-form prose"}
 
     # Rule 2 exemption: blank each preserved span out of the body, literally.
+    # Blank the longest span first. A short span in a long span then does not
+    # break the long span before the gate blanks it.
     residue = body
-    for span in spans:
+    for span in sorted(spans, key=len, reverse=True):
         if span:
             residue = residue.replace(span, " ")
 
