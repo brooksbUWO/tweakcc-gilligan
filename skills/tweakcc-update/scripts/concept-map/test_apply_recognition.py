@@ -1633,6 +1633,9 @@ class AddendumRoundSevenTests(G4HelpersMixin, Base):
         ("map", "concepts", "governed_files"): {"note", "reread", "file_r0001", "file_r0002"},
         ("transcript", "binary"): {"path", "sha256", "tweakcc_version"},
         ("transcript", "concepts", "rows"): {"live_seen"},
+        # A phase-owned decision (Phase 12 on) carries phase and kind.
+        # apply_recognition.py never reads either field and keeps it as is.
+        ("claims", "decisions"): {"phase", "kind"},
     }
 
     def _is_seed_concept_id_step(self, steps):
@@ -2299,6 +2302,9 @@ class AddendumRoundElevenTests(G4HelpersMixin, Base):
         ("map", "concepts", "governed_files"): {"note", "reread", "file_r0001", "file_r0002"},
         ("transcript", "binary"): {"path", "sha256", "tweakcc_version"},
         ("transcript", "concepts", "rows"): {"live_seen"},
+        # A phase-owned decision (Phase 12 on) carries phase and kind.
+        # apply_recognition.py never reads either field and keeps it as is.
+        ("claims", "decisions"): {"phase", "kind"},
     }
 
     def _is_seed_concept_id_step(self, steps):

@@ -340,7 +340,8 @@ class AddendumRoundFiveTests(unittest.TestCase):
         decisions = [
             dict(id="d1", text="decide", depends_on=["c1", "c5", "c6"],
                  cites=["router log system"], concept="k1", file="src.txt",
-                 state="carries-defect", seed_id="s1", verdict="adopted"),
+                 state="carries-defect", seed_id="s1", verdict="adopted",
+                 phase=12, kind="rowset"),
         ]
         return {"claims": claims, "decisions": decisions}
 

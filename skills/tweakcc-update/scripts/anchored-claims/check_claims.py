@@ -81,14 +81,20 @@ DECISION_FIELD_TYPES = dict([
     ("state", "string"),
     ("text", "string"),
     ("verdict", "string"),
+    # A phase-owned decision carries its phase number and a kind label.
+    ("phase", "number"),
+    ("kind", "string"),
 ])
 
 # The script reads these fields directly to decide grounding, identity,
 # and dependency. A JSON null in one of these fields gives no usable
 # value. The schema check fails it like a value of the wrong type.
 # Without this rule, a later step reads the null as a missing field.
+# The phase and kind of a phase-owned decision identify its owner, so a
+# null in either field gives no owner. The check fails it the same way.
 REQUIRED_VALUE_FIELDS = {"id", "category", "anchor", "quote", "output", "saved", "depends_on",
-                          "text", "concept", "file", "seed_id", "state", "verdict"}
+                          "text", "concept", "file", "seed_id", "state", "verdict",
+                          "phase", "kind"}
 
 
 def _json_type_of(value) -> str:
