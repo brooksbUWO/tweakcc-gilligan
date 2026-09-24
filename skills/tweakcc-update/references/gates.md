@@ -1,6 +1,6 @@
 # Verification gates
 
-Three gates make the remediation success criteria executable and fail-closed. Each gate is a standalone script.
+Four gates make the remediation success criteria executable and fail-closed. Each gate is a standalone script.
 
 ## Encode-coverage gate (G3, "0 missing rules")
 
@@ -27,6 +27,20 @@ python .claude/skills/tweakcc-update/scripts/store-remediation/ste_gate.py --rev
 Run it over all eight batches. Exit 0: all prompts are clean, or prose-free and exempt. Exit 1: an unexplained STE violation, named with its file and text. Exit 2: usage or configuration. Exit 3: ceiling.
 
 It scans `<rev>/prompts/after/*.md`. A body with prose must have zero `ste_lint` violations after the gate blanks each preserved span from `<rev>/writing-quality/ste.json`. A failed batch blocks the next gate until you derive the batch again, clean, and get a new approval.
+
+## Authoring gate (G2 bar for an authored revision)
+
+Each row of an authored store revision must pass nine items, not STE alone.
+
+```
+python .claude/skills/tweakcc-update/scripts/store-remediation/authoring_gate.py --revision-dir <rev> --rules-dir <rules> --glossary <glossary.json> [--files <a.md,b.md>] [--list-points]
+```
+
+Row items, one per row in scope: placeholder parity, the splice frame, the code exemption, the carry-forward of every un-nerf point, the glossary, the header rule, and twin consistency. Revision items, with no `--files` scope: the row-name set across `before`, `after`, and the batch queue, and the per-prompt fit of a canonical term across three or more rows.
+
+Exit 0: every item passes. Exit 1: one or more items fail. Exit 2: a usage or input error, found before any item runs. Exit 3: the watchdog fired.
+
+Run the authoring gate with `--files` after each authored body, right after you write it. Run it again on the whole revision, with no `--files` scope, before a review round starts. The second run also proves the two revision-wide items that a `--files` run skips.
 
 ## Reanchor gate (G4, binary-faithful)
 
