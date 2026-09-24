@@ -53,6 +53,38 @@ _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 _HEAD_MARKER = re.compile(r"^(?:[^\w\s]+|\d+\.)[ \t]*")
 _TAIL_MARKER_CHARS = (":", ",", "(", "```")
 _HEADER_LINE = re.compile(r"^[a-z]+(\([^()\s]*\))?!?: \S")
+_LIST_MARKER = re.compile(r"^(?:[-*]|\d+\.) +")
+_STOP_WORDS = frozenset(("the and for with that this from into over than then are was were been "
+                         + "its not only each every any you your our can must does did has have had "
+                         + "but nor yet all also just very they them their there here when what "
+                         + "which while who whom whose why how out off per via").split())
+
+
+def text_units(text: str) -> list[str]:
+    """Split text into units. A unit ends at the sentence pattern and at each
+    line break. The gate removes a leading list marker from each unit. A list
+    marker is a dash, an asterisk, or a number with a period, and a space
+    follows it. The gate drops an empty unit."""
+    units = []
+    for line in text.splitlines():
+        for part in _SENTENCE_SPLIT.split(line):
+            part = _LIST_MARKER.sub("", part.strip())
+            if part:
+                units.append(part)
+    return units
+
+
+def unit_key(unit: str) -> str:
+    """The compare form of a unit. Whitespace runs become one space, and the
+    letters become lowercase."""
+    return " ".join(unit.split()).lower()
+
+
+def content_forms(text: str) -> set:
+    """The first 5 letters of each content word of text. A content word is a
+    lowercase run of 3 or more letters that is not a stop word."""
+    words = re.findall(r"[a-z]+", text.lower())
+    return {w[:5] for w in words if len(w) >= 3 and w not in _STOP_WORDS}
 
 
 def fenced_blocks(body: str) -> list[str]:
@@ -342,33 +374,75 @@ def item_code(row: str, stock_body: str, after_body: str, old_unnerf_text: str) 
     return True, f"{len(fences)} fenced block(s), {len(spans)} long inline span(s) all traced to stock or old un-nerf text"
 
 
+def _is_quote_list(new) -> bool:
+    return (isinstance(new, list) and bool(new)
+            and all(isinstance(q, str) and q for q in new))
+
+
 def load_ledger(revision_dir: Path, row: str) -> dict | None:
+    """Read and check the ledger of one row. No ledger file gives None.
+    A shape error is an input error with the ledger path in the message.
+    The shape errors are these: the ledger is not an object, "points" is
+    not a list, or a point is not an object. An "id" that is not a string
+    or a duplicate id is also a shape error. An "old" that is not a string
+    is a shape error too. The last shape error is a "new" that is not one
+    non-empty string or a non-empty list of non-empty strings."""
     stem = row[:-3] if row.endswith(".md") else row
     ledger_path = revision_dir / "carry-forward" / f"{stem}.json"
     if not ledger_path.is_file():
         return None
     try:
-        return _read_json_strict(str(ledger_path))
+        data = _read_json_strict(str(ledger_path))
     except ValueError as e:
         raise GateUsageError(f"cannot read ledger {ledger_path}: {e}")
+    if not isinstance(data, dict):
+        raise GateUsageError(f"{ledger_path}: the ledger must be an object")
+    points = data.get("points", [])
+    if not isinstance(points, list):
+        raise GateUsageError(f"{ledger_path}: 'points' must be a list")
+    seen = set()
+    for it in points:
+        if not isinstance(it, dict):
+            raise GateUsageError(f"{ledger_path}: point {it!r} is not an object")
+        iid = it.get("id")
+        if not isinstance(iid, str):
+            raise GateUsageError(f"{ledger_path}: point has no string 'id': {it!r}")
+        if iid in seen:
+            raise GateUsageError(f"{ledger_path}: duplicate point id {iid!r}")
+        seen.add(iid)
+        if not isinstance(it.get("old"), str):
+            raise GateUsageError(f"{ledger_path}: point {iid!r} has no string 'old'")
+        new = it.get("new")
+        if not ((isinstance(new, str) and new) or _is_quote_list(new)):
+            raise GateUsageError(
+                f"{ledger_path}: point {iid!r} 'new' must be a non-empty string "
+                f"or a non-empty list of non-empty strings")
+    return data
 
 
-def item_carry_forward(row: str, after_body: str, points: list, ledger: dict | None) -> tuple[bool, str]:
+def item_carry_forward(row: str, after_body: str, after_stripped: str, points: list,
+                       ledger: dict | None) -> tuple[bool, str]:
+    """Prove each added point in the stripped body, and prove that each
+    removed point is gone. load_ledger checks the shape of the ledger first.
+
+    For an added point to pass, these rules must be true. Each quote of the
+    point has 4 or more words. With whitespace runs as one space, each
+    quote occurs in the stripped body. The quotes hold a match for 60
+    percent or more of the old content words, and the percent rounds down.
+    For a match, the first 5 letters of two content words must be equal.
+
+    If its line is a whole line of the rewrite, a removed point fails. If a
+    unit of 6 or more words of its line is a unit of the stripped body, the
+    removed point also fails. The unit compare ignores letter case and
+    whitespace runs. If the same unit is also a unit of an added line of
+    the same rule entry, that unit is exempt from this unit test. The un-nerf
+    text keeps such a unit on purpose. An added line of a different entry
+    does not make a unit exempt."""
     added = [p for p in points if p["kind"] == "+"]
     removed = [p for p in points if p["kind"] == "-"]
 
-    items = (ledger or {}).get("points", []) if ledger is not None else []
-    if not isinstance(items, list):
-        return False, "ledger 'points' must be a list"
-
-    by_id: dict[str, dict] = {}
-    for it in items:
-        iid = it.get("id")
-        if not isinstance(iid, str):
-            return False, f"ledger item has no string 'id': {it!r}"
-        if iid in by_id:
-            return False, f"duplicate ledger item id: {iid!r}"
-        by_id[iid] = it
+    by_id = {it["id"]: it for it in (ledger or {}).get("points", [])}
+    fm_lines = after_body[:len(after_body) - len(after_stripped)].count("\n")
 
     known_ids = {p["id"] for p in added}
     lines = []
@@ -379,39 +453,62 @@ def item_carry_forward(row: str, after_body: str, points: list, ledger: dict | N
             lines.append(f"unknown ledger id: {iid!r}")
 
     for p in added:
-        it = by_id.get(p["id"])
+        pid = p["id"]
+        it = by_id.get(pid)
         if it is None:
             ok = False
-            lines.append(f"    {p['id']}: absent from ledger")
+            lines.append(f"    {pid}: absent from ledger")
             continue
-        old = it.get("old")
-        if old != p["line"]:
+        if it["old"] != p["line"]:
             ok = False
-            lines.append(f"    {p['id']}: ledger 'old' does not match the point line")
+            lines.append(f"    {pid}: ledger 'old' does not match the point line")
             continue
-        new = it.get("new")
-        if not isinstance(new, str) or not new:
-            ok = False
-            lines.append(f"    {p['id']}: ledger 'new' must be a non-empty string")
-            continue
-        if new not in after_body:
-            ok = False
-            lines.append(f"    {p['id']}: ledger 'new' text not found verbatim in the rewrite")
-            continue
+        quotes = [it["new"]] if isinstance(it["new"], str) else it["new"]
+        point_ok = True
         line_no = None
-        for i, body_line in enumerate(after_body.splitlines(), start=1):
-            if new in body_line:
-                line_no = i
-                break
-        lines.append(f"    {p['id']}: kept at line {line_no if line_no else '?'}")
+        for quote in quotes:
+            words = quote.split()
+            if len(words) < 4:
+                point_ok = False
+                lines.append(f"    {pid}: quote under 4 words: {quote!r}")
+                continue
+            m = re.search(r"\s+".join(map(re.escape, words)), after_stripped)
+            if m is None:
+                point_ok = False
+                lines.append(f"    {pid}: quote not found in the body: {' '.join(words)!r}")
+            elif line_no is None:
+                line_no = fm_lines + after_stripped[:m.start()].count("\n") + 1
+        old_forms = content_forms(it["old"])
+        new_forms = content_forms(" ".join(quotes))
+        matched = len(old_forms & new_forms)
+        percent = matched * 100 // len(old_forms) if old_forms else 100
+        if percent < 60:
+            point_ok = False
+            lines.append(f"    {pid}: coverage {percent} percent of the old content words, "
+                         f"{matched} of {len(old_forms)}, under 60 percent")
+        if point_ok:
+            lines.append(f"    {pid}: kept at line {line_no}")
+        else:
+            ok = False
 
+    body_units = {unit_key(u) for u in text_units(after_stripped)}
+    # The units of the added lines, one set for each rule entry.
+    kept_units: dict = {}
+    for p in added:
+        entry = kept_units.setdefault((p["rule_id"], p["entry_index"]), set())
+        entry.update(unit_key(u) for u in text_units(p["line"]))
     for p in removed:
         stripped_point = p["line"].strip()
-        for body_line in after_body.splitlines():
-            if body_line.strip() == stripped_point:
-                ok = False
-                lines.append(f"    {p['id']}: removed stock line still present as a whole line")
-                break
+        exempt = kept_units.get((p["rule_id"], p["entry_index"]), set())
+        found = [u for u in text_units(p["line"])
+                 if len(u.split()) >= 6 and unit_key(u) in body_units
+                 and unit_key(u) not in exempt]
+        if any(body_line.strip() == stripped_point for body_line in after_body.splitlines()):
+            ok = False
+            lines.append(f"    {p['id']}: removed stock line still present as a whole line")
+        elif found:
+            ok = False
+            lines.append(f"    {p['id']}: removed unit still present: {found[0]!r}")
         else:
             lines.append(f"    {p['id']}: absent")
 
@@ -492,6 +589,9 @@ def item_header(row: str, stock_body: str, after_body: str, contract: dict,
 
 def item_twins(row: str, stock_body: str, after_body: str, twin_row: str | None,
                 twin_after_body: str | None, in_scope: bool) -> tuple[bool, str]:
+    """after_body and twin_after_body are the stripped rewrites. The
+    frontmatter of each row stays its own, so the item compares the bodies
+    only. If the stripped rewrites are byte-identical, the twin pair passes."""
     if twin_row is None:
         return True, "no twin"
     if not in_scope:
@@ -515,20 +615,20 @@ def item_per_prompt_fit(rows_prose: dict, glossary_terms: dict, twin_groups: dic
     """rows_prose: {row: prose}. twin_groups: {row: representative_row}.
     A twin pair counts as one row.
 
-    The item counts one sentence, not one term. To count, a sentence must
-    have 8 or more words and a match of a canonical glossary text. For the
-    comparison, runs of whitespace become one space, the ends lose their
-    whitespace, and letter case is ignored. When one such sentence is in 3
-    or more rows, the item fails."""
+    The item counts one unit, not one term. text_units splits the prose at
+    the sentence pattern and at each line break, and it removes a list
+    marker. To count, a unit must have 8 or more words and a match of a
+    canonical glossary text. For the comparison, runs of whitespace become
+    one space, the ends lose their whitespace, and letter case is ignored.
+    When one such unit is in 3 or more rows, the item fails."""
     counts: dict[str, set] = {}
     for row, prose in rows_prose.items():
         rep = twin_groups.get(row, row)
-        for sent in _SENTENCE_SPLIT.split(prose):
-            words = sent.split()
-            if len(words) < 8:
+        for sent in text_units(prose):
+            if len(sent.split()) < 8:
                 continue
             if any(phrase_search(e["text"], sent) for e in glossary_terms.values()):
-                counts.setdefault(" ".join(words).lower(), set()).add(rep)
+                counts.setdefault(unit_key(sent), set()).add(rep)
     failures = sorted((key, sorted(reps)) for key, reps in counts.items() if len(reps) >= 3)
     if failures:
         parts = [f"{key[:80]!r} in {reps}" for key, reps in failures]
@@ -559,11 +659,13 @@ def _parse_files(files_arg: str | None, before_names: set) -> list[str] | None:
 
 def _find_twins(before: dict) -> dict:
     """before: {row: stock_body}. Returns {row: twin_row} for every row that
-    has exactly one byte-identical stock-body sibling. A group of 3+
-    identical stock bodies pairs each with the first other member found."""
+    has exactly one sibling with a byte-identical stripped stock body. The
+    frontmatter block is removed first, so rows with other frontmatter can
+    be twins. A group of 3+ identical stripped stock bodies pairs each with
+    the first other member found."""
     by_body: dict[str, list[str]] = {}
     for row, body in before.items():
-        by_body.setdefault(body, []).append(row)
+        by_body.setdefault(strip_frontmatter(body), []).append(row)
     twins = {}
     for rows in by_body.values():
         if len(rows) < 2:
@@ -631,10 +733,14 @@ def run_gate(revision_dir: Path, rules_dir: Path, glossary_path: Path,
                 lines.append(f"{row} {p['id']} {p['kind']} {p['line']}")
         return 0, lines
 
+    # Check the shape of every ledger in scope before any item runs.
+    ledgers = {row: load_ledger(revision_dir, row) for row in scope}
+
     passed = 0
     failed = 0
 
     rows_prose = {}
+    stripped_after = {r: strip_frontmatter(b) for r, b in bodies_after.items()}
 
     for row in scope:
         if row not in bodies_before:
@@ -654,20 +760,19 @@ def run_gate(revision_dir: Path, rules_dir: Path, glossary_path: Path,
         old_unnerf_text = "\n".join(
             "\n".join(entry.get("unnerf", [])) for _, _, entry in entries
         )
-        ledger = load_ledger(revision_dir, row)
-
         results = []
         results.append(("placeholders", item_placeholders(row, stock_body, after_body)))
         results.append(("frame", item_frame(row, stock_body, after_body)))
         results.append(("code", item_code(row, stock_body, after_body, old_unnerf_text)))
-        results.append(("carry-forward", item_carry_forward(row, after_body, points, ledger)))
+        results.append(("carry-forward", item_carry_forward(
+            row, after_body, stripped_after[row], points, ledgers[row])))
         results.append(("glossary", item_glossary(row, after_body, glossary, contract)))
         results.append(("header", item_header(row, stock_body, after_body, contract, glossary_terms)))
 
         twin_row = twins.get(row)
-        twin_after_body = bodies_after.get(twin_row) if twin_row else None
+        twin_after_body = stripped_after.get(twin_row) if twin_row else None
         twin_in_scope = twin_row in scope if twin_row else True
-        results.append(("twins", item_twins(row, stock_body, after_body, twin_row,
+        results.append(("twins", item_twins(row, stock_body, stripped_after[row], twin_row,
                                              twin_after_body, twin_in_scope)))
 
         for item, (ok, detail) in results:

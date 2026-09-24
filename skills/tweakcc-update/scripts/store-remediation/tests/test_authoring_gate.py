@@ -449,8 +449,10 @@ class TestCarryForward(unittest.TestCase):
             }), encoding="utf-8")
             p = run(base_argv(rev))
         out = p.stdout + p.stderr
-        self.assertEqual(p.returncode, 1, out)
-        self.assertIn("FAIL carry-forward r.md", out)
+        self.assertEqual(p.returncode, 2, out)
+        self.assertTrue(str(ledger_path) in out or ledger_path.as_posix() in out, out)
+        self.assertNotIn("FAIL carry-forward r.md", out)
+        self.assertNotIn("PASS carry-forward r.md", out)
 
     def test_carry_forward_wrong_old_fails(self):
         with tempfile.TemporaryDirectory() as td:
@@ -990,6 +992,318 @@ class TestHardening(unittest.TestCase):
                 encoding="utf-8")
             p = run(base_argv(paths))
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+
+
+class TestRound1(unittest.TestCase):
+    """Items R1-1, R1-2, and R1-3 of reviews/round1-addendum.txt.
+
+    Each test walks many cases. It keeps each failing case, prints the case
+    count, and fails one time at the end.
+    """
+
+    STOCK = "Be brief always."
+    ADDED = "Explain every reasoning step in full detail."
+    QUOTE = "Explain every reasoning step in full detail"
+    UNIT8 = "Keep every answer short and skip the details."
+    FM_QUOTE = '<!--\nname: "System Prompt: Explain every reasoning step in full detail"\nccVersion: "2.1.280"\n-->\n'
+    FM_A = '<!--\nname: "System Prompt: Alpha"\nccVersion: "2.1.280"\n-->\n'
+    FM_B = '<!--\nname: "System Prompt: Beta"\nccVersion: "2.1.280"\n-->\n'
+    TERM_LINE = "Write the whole summary in plain English for each new reader"
+    SHORT_TERM_LINE = "Write the summary in plain English now"
+
+    def _run_rows(self, rows, *extra, glossary=None, rule_files=None, ledgers=None):
+        with tempfile.TemporaryDirectory() as td:
+            paths = make_revision(Path(td), rows=rows, glossary=glossary,
+                                  rule_files=rule_files, ledgers=ledgers)
+            p = run(base_argv(paths, *extra))
+        return p, p.stdout + p.stderr, paths
+
+    def _run_cf(self, body, ledger, stock=None, added=None, fm=FRONTMATTER):
+        stock = self.STOCK if stock is None else stock
+        added = self.ADDED if added is None else added
+        rule = {"id": "r", "rules": [{"description": "d", "stock": [stock], "unnerf": [added]}]}
+        rows = {"r.md": (fm + stock + "\n", fm + body + "\n")}
+        return self._run_rows(rows, rule_files={"r": rule}, ledgers={"r.md": ledger})
+
+    @staticmethod
+    def _ledger(*points):
+        return {"row": "r.md", "points": list(points)}
+
+    def _point(self, new, old=None, pid="r#0+0"):
+        return {"id": pid, "old": self.ADDED if old is None else old, "new": new}
+
+    @staticmethod
+    def _item_line(out, prefix):
+        for ln in out.splitlines():
+            if ln.startswith(("PASS " + prefix, "FAIL " + prefix)):
+                return ln
+        return ""
+
+    @staticmethod
+    def _cf_block(out):
+        """Return the carry-forward FAIL line and the detail lines below it."""
+        block, inside = [], False
+        for ln in out.splitlines():
+            if ln.startswith(("PASS ", "FAIL ", "summary:", "GATE ")):
+                inside = ln.startswith("FAIL carry-forward r.md")
+            if inside:
+                block.append(ln)
+        return block
+
+    def _finish(self, count, failures):
+        print(f"\n{self._testMethodName}: {count} case(s), {len(failures)} failing")
+        self.assertEqual(failures, [], "\n".join(failures))
+
+    def _cf_verdict(self, name, want, body, ledger, **kw):
+        p, out, _ = self._run_cf(body, ledger, **kw)
+        line = self._item_line(out, "carry-forward r.md")
+        code = 0 if want == "PASS" else 1
+        if line.startswith(want + " ") and p.returncode == code:
+            return None
+        return f"{name}: want {want} carry-forward and exit {code}, got exit {p.returncode}: {out[-700:]!r}"
+
+    def test_r1_1a_quote_only_in_frontmatter_fails(self):
+        body_quote = "Explain each reasoning step in full"
+        cases = [
+            ("string quote", "FAIL", "Give the answer now.", self._point(self.QUOTE)),
+            ("list quote", "FAIL", "Give the answer now.", self._point([self.QUOTE])),
+            ("list with one quote in the body", "FAIL", body_quote + ".", self._point([body_quote, self.QUOTE])),
+            ("control with the quote in the body", "PASS", self.ADDED, self._point(self.QUOTE)),
+        ]
+        failures = [m for m in (self._cf_verdict(n, w, b, self._ledger(pt), fm=self.FM_QUOTE)
+                                for n, w, b, pt in cases) if m]
+        self._finish(len(cases), failures)
+
+    def test_r1_1b_quote_forms_and_quote_rules(self):
+        q, a = self.QUOTE, self.ADDED
+        cases = [
+            ("one string quote", "PASS", a, self._point(q)),
+            ("list of one quote", "PASS", a, self._point([q])),
+            ("list of two quotes", "PASS", "Explain every reasoning step now. Give it in full detail.", self._point(["Explain every reasoning step now", "Give it in full detail"])),
+            ("1-word string quote", "FAIL", a, self._point("Explain")),
+            ("2-word string quote", "FAIL", a, self._point("Explain every")),
+            ("3-word string quote", "FAIL", a, self._point("Explain every reasoning")),
+            ("1-word quote in a list", "FAIL", a, self._point([q, "detail"])),
+            ("2-word quote in a list", "FAIL", a, self._point([q, "full detail"])),
+            ("3-word quote in a list", "FAIL", a, self._point([q, "in full detail"])),
+            ("string quote not in the body", "FAIL", a, self._point("Explain each reasoning step in full detail")),
+            ("list quote not in the body", "FAIL", a, self._point([q, "Give the answer in one word"])),
+            ("body with other whitespace", "PASS", "Explain every  reasoning\tstep in\nfull   detail.", self._point(q)),
+            ("quote with other whitespace", "PASS", a, self._point("Explain  every reasoning\tstep in\nfull   detail")),
+            ("list quote with other whitespace", "PASS", a, self._point(["Explain every\treasoning step", "step  in full detail"])),
+        ]
+        failures = [m for m in (self._cf_verdict(n, w, b, self._ledger(pt)) for n, w, b, pt in cases) if m]
+        self._finish(len(cases), failures)
+
+    def test_r1_1c_coverage_of_old_content_words(self):
+        # Each synthetic word has 5 letters, so each one has its own 5-letter form.
+        words = ["zq" + chr(97 + i // 26) + chr(97 + i % 26) + "a" for i in range(200)]
+        cases = []
+        for covered, total, want in ((59, 100, "FAIL"), (60, 100, "PASS"), (119, 200, "FAIL"),
+                                     (120, 200, "PASS"), (3, 5, "PASS"), (5, 9, "FAIL"),
+                                     (11, 19, "FAIL"), (6, 10, "PASS")):
+            old = " ".join(words[:total]) + "."
+            cases.append((f"{covered} of {total} words", want, old, [" ".join(words[:covered]) + " and then"]))
+        cases += [
+            ("stop words in old never count", "PASS", "explain reasoning with every source and each risk they have.", ["explain reasoning source risk"]),
+            ("short words in old never count", "PASS", "go to it so we do explain reasoning.", ["please explain your reasoning"]),
+            ("stop word in a quote never matches", "FAIL", "explain reasoning thereafter cite sources.", ["explain the reasoning there now"]),
+            ("first 5 letters match", "PASS", "explaining reasoning carefully.", ["an explanation of your reasons"]),
+            ("first 4 letters are not sufficient", "FAIL", "stressing the reasoning.", ["the stream of reasons"]),
+            ("all quotes of one point count together", "PASS", "explain reasoning cite sources name gaps.", ["explain the reasoning now", "cite all the sources"]),
+        ]
+        failures = []
+        for name, want, old, quotes in cases:
+            new = quotes[0] if len(quotes) == 1 else quotes
+            msg = self._cf_verdict(name, want, ". ".join(quotes) + ".",
+                                   self._ledger(self._point(new, old=old)), added=old)
+            if msg:
+                failures.append(msg)
+        self._finish(len(cases), failures)
+
+    def test_r1_1d_removed_unit_in_a_longer_line_fails(self):
+        a, u = self.ADDED, self.UNIT8
+        cases = [
+            ("8-word unit in a longer line", "FAIL", u, f"{a} {u} Then stop."),
+            ("unit with other case and spacing", "FAIL", u, f"{a} KEEP every answer  short and\tskip the Details. Then stop."),
+            ("unit of a stock line with 2 units", "FAIL", "Be brief. " + u, f"{a} {u}"),
+            ("unit as a list item", "FAIL", u, f"{a}\n- {u}\nThen stop."),
+            ("6-word unit", "FAIL", "Keep every answer very short always.", f"{a} Keep every answer very short always. Then stop."),
+            ("5-word unit", "PASS", "Keep every answer very short.", f"{a} Keep every answer very short. Then stop."),
+            ("old whole-line case", "FAIL", self.STOCK, f"{a}\n{self.STOCK}"),
+        ]
+        ledger = self._ledger(self._point(self.QUOTE))
+        failures = [m for m in (self._cf_verdict(n, w, b, ledger, stock=s) for n, w, s, b in cases) if m]
+        self._finish(len(cases), failures)
+
+    def test_r1_1e_fail_detail_names_point_and_check(self):
+        q, a, u = self.QUOTE, self.ADDED, self.UNIT8
+        cases = [
+            ("quote not found", "r#0+0", ("not found",), self.STOCK, a, self._point("Explain each reasoning step in full detail")),
+            ("quote under 4 words", "r#0+0", ("4", "word"), self.STOCK, a, self._point([q, "full detail"])),
+            ("coverage", "r#0+0", ("coverage", "40"), self.STOCK, "Explain the reasoning to them.", self._point("Explain the reasoning to them")),
+            ("removed unit present", "r#0-0", ("removed", "unit"), u, f"{a} {u} Then stop.", self._point(q)),
+        ]
+        failures = []
+        for name, pid, keys, stock, body, pt in cases:
+            p, out, _ = self._run_cf(body, self._ledger(pt), stock=stock)
+            hits = [ln for ln in self._cf_block(out)
+                    if pid in ln and all(k in ln.lower() for k in keys)]
+            if p.returncode != 1 or not hits:
+                failures.append(f"{name}: want a FAIL detail line with {pid} and {keys}, "
+                                f"got exit {p.returncode}: {out[-700:]!r}")
+        self._finish(len(cases), failures)
+
+    def test_r1_1f_ledger_shape_errors_exit_2(self):
+        q = self.QUOTE
+        good = self._point(q)
+        non_string = [0, 1.5, True, None, [], {}]
+        cases = [(f"points={v!r}", {"row": "r.md", "points": v}) for v in ({}, "points", "", 0, 1.5, True, False, None)]
+        cases += [(f"point={v!r}", self._ledger(v)) for v in ([], "point", 0, 1.5, True, None)]
+        cases += [(f"id={v!r}", self._ledger({**good, "id": v})) for v in non_string]
+        cases.append(("duplicate id", self._ledger(good, dict(good))))
+        cases += [(f"old={v!r}", self._ledger({**good, "old": v})) for v in non_string]
+        bad_new = ["", [], [""], [0], [None], [[q]], [{}], [q, ""], [q, 0], 0, 1.5, True, False, None, {}]
+        cases += [(f"new={v!r}", self._ledger({**good, "new": v})) for v in bad_new]
+        failures = []
+        for name, ledger in cases:
+            p, out, paths = self._run_cf(self.ADDED, ledger)
+            path = paths["revision_dir"] / "carry-forward" / "r.json"
+            named = str(path) in out or path.as_posix() in out
+            item_lines = [ln for ln in out.splitlines() if ln.startswith(("PASS ", "FAIL "))]
+            if p.returncode != 2 or not named or item_lines:
+                failures.append(f"{name}: want exit 2, the ledger path, and no item line, "
+                                f"got exit {p.returncode}: {out[-500:]!r}")
+        p, out, _ = self._run_cf(self.ADDED, self._ledger(good, self._point(q, old="nope", pid="r#0+9")))
+        if p.returncode != 1 or "FAIL carry-forward r.md" not in out:
+            failures.append(f"unknown id: want exit 1 and FAIL carry-forward, got exit {p.returncode}: {out[-500:]!r}")
+        self._finish(len(cases) + 1, failures)
+
+    def test_r1_2_twins_ignore_the_frontmatter(self):
+        fa, fb, stock = self.FM_A, self.FM_B, "Do the task now.\n"
+        term = self.TERM_LINE + ".\n"
+
+        def pair(ra, rb, **more):
+            rows = {"a.md": (fa + stock, fa + ra), "b.md": (fb + stock, fb + rb)}
+            rows.update(more)
+            return rows
+
+        def both_pass(o):
+            return "PASS twins a.md" in o and "PASS twins b.md" in o
+
+        def one_fails(o):
+            return "FAIL twins a.md" in o or "FAIL twins b.md" in o
+
+        same = "Do the whole task now.\n"
+        cases = [
+            ("other frontmatter, other rewrites", pair("Do the task now, version A.\n", "Do the task now, version B.\n"), (), one_fails, 1),
+            ("other frontmatter, same rewrites", pair(same, same), (), both_pass, 0),
+            ("other frontmatter, one twin in --files", pair(same, same), ("--files", "a.md"), lambda o: "FAIL twins a.md" in o, 1),
+            ("same frontmatter, other rewrites", {"a.md": (TWIN_STOCK, FRONTMATTER + "Version A.\n"), "b.md": (TWIN_STOCK, FRONTMATTER + "Version B.\n")}, (), one_fails, 1),
+            ("same frontmatter, same rewrites", {"a.md": (TWIN_STOCK, FRONTMATTER + same), "b.md": (TWIN_STOCK, FRONTMATTER + same)}, (), both_pass, 0),
+            ("fit counts the pair as one row", pair(term, term, **{"c.md": (FRONTMATTER + "Stock body c.\n", FRONTMATTER + term)}), (), lambda o: both_pass(o) and "PASS per-prompt-fit" in o, 0),
+            ("fit control with no pair", {"a.md": (fa + "Stock a.\n", fa + term), "b.md": (fb + "Stock b.\n", fb + term), "c.md": (FRONTMATTER + "Stock c.\n", FRONTMATTER + term)}, (), lambda o: "FAIL per-prompt-fit" in o, 1),
+        ]
+        failures = []
+        for name, rows, extra, check, code in cases:
+            p, out, _ = self._run_rows(rows, *extra, glossary=TERM_GLOSSARY)
+            if p.returncode != code or not check(out):
+                failures.append(f"{name}: want exit {code}, got exit {p.returncode}: {out[-700:]!r}")
+        self._finish(len(cases), failures)
+
+    def test_r1_3_fit_units_split_on_line_breaks(self):
+        def body8(i, m):
+            return f"Row {i} has these steps:\n{m}{self.TERM_LINE}\nThen add row {i} to the log\n"
+
+        def body7(i, m):
+            return f"Row {i} has one step.\n{m}{self.SHORT_TERM_LINE}\n"
+
+        def rows(bodies):
+            return {f"row{i}.md": (FRONTMATTER + f"Stock body {i}.\n", FRONTMATTER + b)
+                    for i, b in enumerate(bodies)}
+
+        cases = []
+        for m in ("- ", "* ", "1. "):
+            cases.append((f"8+ word line after {m!r} in 3 rows", rows([body8(i, m) for i in range(3)]), "FAIL"))
+            cases.append((f"8+ word line after {m!r} in 2 rows", rows([body8(0, m), body8(1, m), "Row 2 has no such step.\n"]), "PASS"))
+            cases.append((f"7 words after {m!r} in 3 rows", rows([body7(i, m) for i in range(3)]), "PASS"))
+        cases.append(("8+ word line with no marker in 3 rows", rows([body8(i, "") for i in range(3)]), "FAIL"))
+        cases.append(("8+ word line after mixed markers in 3 rows", rows([body8(0, "- "), body8(1, "* "), body8(2, "1. ")]), "FAIL"))
+        failures = []
+        for name, rws, want in cases:
+            p, out, _ = self._run_rows(rws, glossary=TERM_GLOSSARY)
+            line = self._item_line(out, "per-prompt-fit")
+            ok = line.startswith(want + " ") and p.returncode == (0 if want == "PASS" else 1)
+            if ok and want == "FAIL":
+                ok = all(r in line for r in ("row0.md", "row1.md", "row2.md"))
+            if not ok:
+                failures.append(f"{name}: want {want} per-prompt-fit, got exit {p.returncode}: {out[-700:]!r}")
+        self._finish(len(cases), failures)
+
+
+class TestRound1RemovedUnitExemption(unittest.TestCase):
+    """Item R1-1d' of reviews/round1-addendum.txt.
+
+    If an added line of the same entry has a removed unit, that unit is exempt.
+    The test walks each case, prints the case count, and fails one time.
+    """
+
+    SHARED = "Write the answer in plain words for the reader."
+    EXTRA = "Give full detail when the task needs it."
+    OTHER = "Stop after the first answer and add nothing more."
+
+    def _case(self, name, want, entries, body, points):
+        # entries: a list of (stock lines, unnerf lines), one per entry.
+        # points: a list of (point id, old line, quote).
+        rule = {"id": "r", "rules": [
+            {"description": "d", "stock": s, "unnerf": u} for s, u in entries]}
+        stock = FRONTMATTER + "\n".join(ln for s, _ in entries for ln in s) + "\n"
+        ledger = {"row": "r.md", "points": [
+            {"id": i, "old": o, "new": q} for i, o, q in points]}
+        with tempfile.TemporaryDirectory() as td:
+            paths = one_row_revision(
+                Path(td), "r.md", stock, FRONTMATTER + body + "\n",
+                rule_files={"r": rule}, ledgers={"r.md": ledger})
+            p = run(base_argv(paths))
+        out = p.stdout + p.stderr
+        code = 0 if want == "PASS" else 1
+        line = next((ln for ln in out.splitlines()
+                     if ln.startswith(("PASS carry-forward r.md", "FAIL carry-forward r.md"))), "")
+        ok = line.startswith(want + " ") and p.returncode == code
+        if ok and want == "FAIL":
+            ok = any("r#0-0" in ln and "removed unit" in ln for ln in out.splitlines())
+        if ok:
+            return None
+        return f"{name}: want {want} carry-forward and exit {code}, got exit {p.returncode}: {out[-700:]!r}"
+
+    def test_r1_1d_prime_removed_unit_kept_by_an_added_line(self):
+        sh, ex, ot = self.SHARED, self.EXTRA, self.OTHER
+        stock1 = "Keep it short. " + sh
+        added1 = sh + " " + ex
+        stock2 = stock1 + " " + ot
+        added3 = "write the  answer in PLAIN words\tfor the reader. " + ex
+        cases = [
+            ("shared unit of the same entry", "PASS",
+             [([stock1], [added1])], added1,
+             [("r#0+0", added1, added1)]),
+            ("second unit that no added line holds", "FAIL",
+             [([stock2], [added1])], added1 + " " + ot,
+             [("r#0+0", added1, added1)]),
+            ("shared unit with other case and spacing", "PASS",
+             [([stock1], [added3])], added1,
+             [("r#0+0", added3, added1)]),
+            ("shared unit only in the added line of an other entry", "FAIL",
+             [([stock1], [ex]), (["Be brief always."], [sh + " Name every risk that you find."])],
+             ex + " " + sh + " Name every risk that you find.",
+             [("r#0+0", ex, ex), ("r#1+0", sh + " Name every risk that you find.",
+                                  sh + " Name every risk that you find.")]),
+            ("shared unit as a list item in the added line", "PASS",
+             [([stock1], [ex, "- " + sh])], ex + "\n- " + sh,
+             [("r#0+0", ex, ex), ("r#0+1", "- " + sh, sh)]),
+        ]
+        failures = [m for m in (self._case(*c) for c in cases) if m]
+        print(f"\n{self._testMethodName}: {len(cases)} case(s), {len(failures)} failing")
+        self.assertEqual(failures, [], "\n".join(failures))
 
 
 if __name__ == "__main__":
