@@ -1,6 +1,6 @@
 # tweakcc-gilligan
 
-Customize the Claude Code you have installed on your own machine, with one command sequence, on
+Customize the Claude Code you installed on your own machine, with one command sequence, on
 Windows, Linux, and macOS. The result is a Claude Code that works thoroughly instead of minimally,
 with better writing quality. Other patchers each cover one part of the job. tweakcc-gilligan runs
 the full three-source patch chain in the verified order, logs every item, and verifies the result.
@@ -21,15 +21,15 @@ the copy on your machine changes.
 
 ![tweakcc session start header](assets/tweakcc-session-start.png)
 
-The screenshot shows the session-start header of a patched Claude Code 2.1.220 with tweakcc-fixed 2.7.13. The version numbers in the header change with each release; the layout is what to look for.
+The screenshot shows the session-start header of a patched Claude Code 2.1.220 with tweakcc-fixed 2.7.13. The version numbers in the header change with each release. The layout is what to look for.
 
 - **Thorough by default.** Rewrites the "be brief, do the minimum" directives and raises the default reasoning-effort setting.
 - **One safe chain.** Applies both patchers in the verified order (`tweakcc-fixed` first, `unnerfcc` second).
 - **Windows PE and Unix.** Native `claude.exe` (PE) unpack and repack, plus ELF and Mach-O.
 - **Three content sources.** Code features, prompt rewrites, and reminder overrides, applied in one pass.
 - **Runtime isolation.** All work stays under `~/.tweakcc-gilligan/` with PID tracking and timestamped logs.
-- **Logged runs.** Every run logs the full per-item result of each patcher. Verification fails if any override failed.
-- **Reversible.** `claude --version` prints two lines when the patch is live. Reset to stock is one command.
+- **Logged runs.** Every run logs the full per-item result of each patcher. If any override failed, verification fails.
+- **Reversible.** After a successful patch, `claude --version` prints two lines. Reset to stock is one command.
 
 A patched binary reports both versions. One command shows that the patch is live:
 
@@ -161,7 +161,7 @@ npm install -g @anthropic-ai/claude-code@<version>
 ## The name
 
 tweakcc-gilligan takes its name from a parody of the Gilligan's Island theme song, posted to
-r/ClaudeCode: [Just sit right back and you'll hear a tale](https://www.reddit.com/r/ClaudeCode/comments/1vbrrm2/just_sit_right_back_and_youll_hear_a_tale_the/).
+r/ClaudeCode: [the ballad post on r/ClaudeCode](https://www.reddit.com/r/ClaudeCode/comments/1vbrrm2/just_sit_right_back_and_youll_hear_a_tale_the/).
 The verses are in [gilligan-ballad.md](gilligan-ballad.md).
 
 ## Credits and upstream projects
