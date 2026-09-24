@@ -532,6 +532,10 @@ def item_glossary(row: str, after_body: str, glossary: dict, contract: dict) -> 
         if not phrase_search(text, prose):
             return False, f"required term {tid!r} ({text!r}) not found"
 
+    # The first match of each ordered term must come at or after the first match
+    # of the term before it. The plan-contract field labels each occur once, so
+    # this is the field order of D-10. A text where a term occurs before the
+    # term listed ahead of it fails, even if a later copy is in order.
     ordered = (contract.get("ordered", {}) or {}).get(row, [])
     last_pos = -1
     for tid in ordered:
@@ -794,12 +798,14 @@ def run_gate(revision_dir: Path, rules_dir: Path, glossary_path: Path,
             failed += 1
 
         # _find_twins links each group of any size in one ring. Walk the whole
-        # ring, so every member maps to the same representative row.
+        # ring, so every member maps to the same representative row. The seen
+        # set stops the walk if a link ever leaves the ring or repeats a row.
         twin_groups = {}
         for row in twins:
-            rep, nxt = row, twins[row]
-            while nxt != row:
-                rep, nxt = min(rep, nxt), twins[nxt]
+            seen, rep, nxt = {row}, row, twins[row]
+            while nxt not in seen:
+                seen.add(nxt)
+                rep, nxt = min(rep, nxt), twins.get(nxt, nxt)
             twin_groups[row] = rep
         ok, detail = item_per_prompt_fit(rows_prose, glossary_terms, twin_groups)
         if ok:

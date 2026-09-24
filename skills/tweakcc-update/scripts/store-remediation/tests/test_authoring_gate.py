@@ -591,6 +591,22 @@ class TestGlossary(unittest.TestCase):
         self.assertEqual(p.returncode, 1, out)
         self.assertIn("FAIL glossary r.md", out)
 
+    def test_glossary_ordered_uses_first_matches_and_a_later_copy_does_not_rescue(self):
+        # Round 2 code review IN-02: the rule compares first matches.
+        contract = {
+            "schema": 1, "required": {},
+            "ordered": {"r.md": ["lead-with-result", "plain-english"]},
+            "forbidden": {},
+            "header_statement": {"rows": [], "term": None, "mentions": []},
+        }
+        with tempfile.TemporaryDirectory() as td:
+            paths = self._rev(Path(td), "Write in plain English, and lead with the result. "
+                                         "Keep it in plain English.\n", contract=contract)
+            p = run(base_argv(paths))
+        out = p.stdout + p.stderr
+        self.assertEqual(p.returncode, 1, out)
+        self.assertIn("is out of order", out)
+
     def test_glossary_forbidden_phrase_fails(self):
         contract = {
             "schema": 1, "required": {}, "ordered": {},
