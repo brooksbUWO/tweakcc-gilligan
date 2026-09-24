@@ -1,0 +1,50 @@
+{
+  "revision_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "lane_reports": [
+    {
+      "lane": "antigravity",
+      "provider": "google",
+      "model_id": "gemini-3.6-flash",
+      "revision_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "round": 1,
+      "report_digest": "aaaa",
+      "finding_count": 0,
+      "timestamp": 100.0,
+      "sequence": 10,
+      "catalog": ["gemini-3.6-flash", "gemini-3.6-pro"],
+      "probe_command": "list-antigravity-models",
+      "probe_exit_code": 0,
+      "probe_output": "ok"
+    },
+    {
+      "lane": "opencode",
+      "provider": "opencode-go",
+      "model_id": "glm-5.1",
+      "revision_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "round": 1,
+      "report_digest": "bbbb",
+      "finding_count": 0,
+      "timestamp": 101.0,
+      "sequence": 11,
+      "catalog": ["glm-5.1", "deepseek-v4-pro"],
+      "probe_command": "list-opencode-models",
+      "probe_exit_code": 0,
+      "probe_output": "ok"
+    }
+  ],
+  "doctrine_reread": {
+    "revision_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "doctrine_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "reread_timestamp": 200.0,
+    "reread_sequence": 20,
+    "result": "pass",
+    "blind_spots": ["semantic transfer across model generations untested"]
+  },
+  "approval": {
+    "revision_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "approval_timestamp": 300.0,
+    "approval_sequence": 30,
+    "date": "2026-08-21",
+    "verbatim_response": "approved"
+  }
+}

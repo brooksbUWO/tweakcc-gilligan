@@ -1,0 +1,3 @@
+"file","class","batch","basis","assigned_by","existing_override","token_count"
+"fixture-defective.md","system-reminder","fixture-batch","hand: seeded defective prompt with an ordered placeholder","hand","none","40"
+"fixture-clean.md","system-reminder","fixture-batch","hand: seeded clean prompt exercising the six negative checks","hand","none","20"

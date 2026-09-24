@@ -1,0 +1,29 @@
+{
+  "revision_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "lane_reports": [
+    {
+      "lane": "antigravity",
+      "provider": "google",
+      "model_id": "gemini-3.6-flash",
+      "revision_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "round": 1,
+      "finding_count": 0,
+      "timestamp": 100.0,
+      "sequence": 10,
+      "catalog": ["gemini-3.6-flash"],
+      "probe_exit_code": 0
+    },
+    {
+      "lane": "opencode",
+      "provider": "github-copilot",
+      "model_id": "gpt-5.6",
+      "revision_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "round": 1,
+      "finding_count": 0,
+      "timestamp": 101.0,
+      "sequence": 11,
+      "catalog": ["gpt-5.6"],
+      "probe_exit_code": 0
+    }
+  ]
+}

@@ -34,10 +34,11 @@ import threading
 import time
 from pathlib import Path
 
-# Locations. ENCODER is the authoritative predicate source; APPLY is the live
-# rules file it targets (repathed to the single dev unnerfcc copy).
-ENCODER = Path(__file__).resolve().parents[4] / ".claude" / "workspace" / "scripts" / "encode-splice" / "encode_rules.py"
-# Derived like ENCODER: parents[4] is the project root from BOTH skill copies
+# Locations. ENCODER is the authoritative predicate source. It lives in the
+# encode-splice folder beside this script, in both skill copies. APPLY is the
+# live rules file it targets (repathed to the single dev unnerfcc copy).
+ENCODER = Path(__file__).resolve().parent / "encode-splice" / "encode_rules.py"
+# parents[4] is the project root from BOTH skill copies
 # (installed .claude/skills/... and dev tweakcc-gilligan/skills/...), so the
 # default resolves on any machine that has the unnerfcc clone at the root.
 DEFAULT_APPLY = Path(__file__).resolve().parents[4] / "unnerfcc" / "scripts" / "apply-unnerfs.py"

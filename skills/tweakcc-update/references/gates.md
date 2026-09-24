@@ -1,34 +1,34 @@
 # Verification gates
 
-Two gates make the ROADMAP success criteria executable and fail-closed. Both run inside their GSD phase and both are also standalone scripts a verifier can run.
+Three gates make the remediation success criteria executable and fail-closed. Each gate is a standalone script.
 
-## Encode-coverage gate (Phase 3, "0 missing rules")
+## Encode-coverage gate (G3, "0 missing rules")
 
-Every approved behavioral un-nerf must be present as a rule in the live `apply-unnerfs.py`.
+Each approved behavioral un-nerf must be present as a rule in the live `apply-unnerfs.py`.
 
 ```
 python .claude/skills/tweakcc-update/scripts/check_encode_coverage.py
 ```
 
-Exit 0: every non-retain rewrite is encoded. Exit 1: one or more approved un-nerfs are unencoded, or a batch could not be verified. Exit 2: usage or config error. Exit 3: wall-clock ceiling.
+Exit 0: each non-retain rewrite is encoded. Exit 1: one or more approved un-nerfs are not encoded, or the script cannot verify a batch. Exit 2: usage or configuration error. Exit 3: wall-clock ceiling.
 
-It imports `encode_rules.encode_batch`, so the set of prompts that should have a rule is computed with the encoder's exact predicate: a rule is expected only when the record disposition is not `retain` and the after-body differs from the before-body (raw bytes, frontmatter stripped). Each expected slug is checked against the rule ids `apply-unnerfs.py --dump-rules` exposes. A batch whose sealed revision fails the encoder's own fail-closed gate (digest drift, missing bodies) is a batch-level FAIL, listed by name, not a crash.
+It imports `encode_rules.encode_batch`, so it uses the exact predicate of the encoder to find the prompts that must have a rule. A record needs a rule in one case: its disposition is not `retain`, and its after-body differs from its before-body (raw bytes, frontmatter stripped). It compares each expected slug with the rule ids that `apply-unnerfs.py --dump-rules` exposes. A batch whose sealed revision fails the fail-closed gate of the encoder (digest drift, missing bodies) is a FAIL for that batch. The script names the batch and does not crash.
 
-A digest-drift FAIL means the sealed approved after-bodies were modified after approval. The phase is not done: re-derive the sealed bodies against the regenerated store, re-seal, and re-approve within the phase. Do not edit the recorded digest to force a pass.
+A digest-drift FAIL means that someone changed the sealed approved after-bodies after approval. The work is not done. Derive the sealed bodies again against the regenerated store, seal them again, and get a new approval. Do not edit the recorded digest to force a pass.
 
-## STE gate (Phase 2 minimum bar)
+## STE gate (G2 minimum bar)
 
-Every batch's approved revision must be STE-clean.
+The approved revision of each batch must be STE-clean.
 
 ```
-python .claude/workspace/scripts/store-remediation/ste_gate.py --revision-dir <batch>/<rev>
+python .claude/skills/tweakcc-update/scripts/store-remediation/ste_gate.py --revision-dir <batch>/<rev>
 ```
 
-Run it over all eight batches. Exit 0: all prompts clean or prose-free exempt. Exit 1: any unexplained STE violation, named with file and offending text. Exit 2: usage or config. Exit 3: ceiling.
+Run it over all eight batches. Exit 0: all prompts are clean, or prose-free and exempt. Exit 1: an unexplained STE violation, named with its file and text. Exit 2: usage or configuration. Exit 3: ceiling.
 
-It scans `<rev>/prompts/after/*.md`. A prose-bearing body must have zero `ste_lint` violations after blanking each preserved span from `<rev>/writing-quality/ste.json`. A failing batch keeps the phase open until the batch is re-derived clean and re-approved.
+It scans `<rev>/prompts/after/*.md`. A body with prose must have zero `ste_lint` violations after the gate blanks each preserved span from `<rev>/writing-quality/ste.json`. A failed batch blocks the next gate until you derive the batch again, clean, and get a new approval.
 
-## Reanchor gate (Phase 3, binary-faithful)
+## Reanchor gate (G4, binary-faithful)
 
 The encoded rules must apply against the genuine binary with no loss.
 
@@ -36,8 +36,8 @@ The encoded rules must apply against the genuine binary with no loss.
 python unnerfcc/scripts/apply-unnerfs.py --check
 ```
 
-`0 FAILED / 0 MISSING` is the pass. A rule whose sealed before-body diverges from the genuine binary (slot-count or prose divergence) is re-derived against the regenerated store within the phase. Opaque-hoist dead-ends the slot-preserving splicer cannot reach are dispositioned at plan level and recorded as waivers.
+The pass is `0 FAILED / 0 MISSING`. A rule whose sealed before-body diverges from the genuine binary (a slot-count or prose divergence) must be derived again against the regenerated store. The slot-preserving splicer cannot reach an opaque-hoist dead-end. Disposition each such case in the plan, and record it as a waiver.
 
-## How the gates gate
+## Gate order
 
-The skill does not write ROADMAP or STATE checkboxes. It dispatches `/gsd-plan-phase N` then `/gsd-execute-phase N`. Inside `gsd-execute-phase`, `gsd-verifier` checks the phase `must_haves` against the codebase and writes `NN-VERIFICATION.md`. Only a `passed` verdict reaches `gsd_run query phase.complete N`, which flips the checkbox to `[x]`. A skill that writes the checkbox directly bypasses the only success-criteria check GSD has.
+Run the gates in order. Each gate must exit 0 before the next gate runs. If a gate fails, fix the cause and run that gate again. Never go past a failed gate, and never edit a recorded seal digest to get a pass.
