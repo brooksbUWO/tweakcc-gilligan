@@ -161,7 +161,7 @@ npm install -g @anthropic-ai/claude-code@<version>
 ## The name
 
 tweakcc-gilligan takes its name from a parody of the Gilligan's Island theme song, posted to
-r/ClaudeCode: [the ballad post on r/ClaudeCode](https://www.reddit.com/r/ClaudeCode/comments/1vbrrm2/just_sit_right_back_and_youll_hear_a_tale_the/).
+r/ClaudeCode: [the ballad post](https://www.reddit.com/r/ClaudeCode/comments/1vbrrm2/just_sit_right_back_and_youll_hear_a_tale_the/).
 The verses are in [gilligan-ballad.md](gilligan-ballad.md).
 
 ## Credits and upstream projects
