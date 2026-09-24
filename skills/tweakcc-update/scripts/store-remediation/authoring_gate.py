@@ -78,8 +78,14 @@ def inline_code_spans(body: str, *, min_words: int = 1) -> list[str]:
 
 
 def strip_code_parts(body: str) -> str:
-    """The prose of a body: code parts replaced by one space each."""
-    residue = _FENCE.sub(" ", body)
+    """The prose of a body: the frontmatter block and code parts replaced by
+    one space each. The glossary and header items read only model-facing
+    prose, never the stock frontmatter that item_frame holds byte-identical
+    (name/description/ccVersion/variables can restate a glossary phrase,
+    for example a prompt titled with the exact stock line a rewrite must
+    drop)."""
+    residue = strip_frontmatter(body)
+    residue = _FENCE.sub(" ", residue)
     residue = _INLINE_CODE.sub(" ", residue)
     return residue
 

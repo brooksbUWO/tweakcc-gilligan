@@ -545,6 +545,22 @@ class TestGlossary(unittest.TestCase):
         out = p.stdout + p.stderr
         self.assertIn("PASS glossary r.md", out)
 
+    def test_glossary_variant_only_in_frontmatter_passes(self):
+        """A stock frontmatter name/description can restate a glossary
+        variant (for example a prompt titled with the exact stock line a
+        rewrite must drop). item_frame holds the frontmatter byte-identical
+        to stock, so the glossary and header items must never scan it."""
+        fm = ('<!--\nname: "System Prompt: Lead with the outcome"\n'
+              'ccVersion: "2.1.280"\n-->\n')
+        with tempfile.TemporaryDirectory() as td:
+            stock = fm + "Do the task now.\n"
+            rewrite = fm + "Do the task now, and lead with the result.\n"
+            paths = one_row_revision(Path(td), "r.md", stock, rewrite,
+                                      glossary=TERM_GLOSSARY, contract=None)
+            p = run(base_argv(paths))
+        out = p.stdout + p.stderr
+        self.assertIn("PASS glossary r.md", out)
+
     def test_glossary_missing_required_term_fails(self):
         contract = {
             "schema": 1, "required": {"r.md": ["plain-english"]},
