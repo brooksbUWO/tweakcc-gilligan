@@ -783,10 +783,19 @@ echo "=== Patches Applied and Verified Successfully! ==="
 # positives aborted a successful 2.1.258 apply). Real failures are
 # "patch: <name>: failed to ...", "Error: ...", "\u2716 Error ..." at column 0
 # (descriptions are indented, so lines are matched unstripped).
-TWEAKCC_FAIL_PATTERNS = [r"^patch: .*: failed to ", r"^inline-blob: failed", r"^Error: ", r"^\u2716 Error",
+# The "\u2716 Error downloading system prompts" line is NOT a real failure: it is
+# tweakcc-fixed reporting that its release ships no stock prompts for the target
+# CC version, which it treats as non-fatal ("skipping system prompt
+# customizations", then "Customizations applied successfully!", exit 0). This
+# project applies the system-prompt un-nerfs through unnerfcc, not tweakcc-fixed,
+# so that condition is benign here and must not abort the chain before unnerfcc
+# runs (2026-11-10: it aborted a 2.1.321 apply, leaving the binary un-nerf-free).
+# It is surfaced as a version-conditional skip instead.
+TWEAKCC_FAIL_PATTERNS = [r"^patch: .*: failed to ", r"^inline-blob: failed", r"^Error: ",
+                         r"^\u2716 Error(?! downloading system prompts)",
                          r"^Failed to read markdown file", r"\[FAILED"]
 # Version-conditional skips worth surfacing (not the free-text descriptions).
-TWEAKCC_SKIP_PATTERN = r"\bskipping\b|^Skipped \d+ up-to-date|^Unresolved placeholder"
+TWEAKCC_SKIP_PATTERN = r"\bskipping\b|^Skipped \d+ up-to-date|^Unresolved placeholder|^\u2716 Error downloading system prompts"
 # unnerfcc's summary counter line carries "skipped=N"; a zero count is not a skipped
 # item (2026-09-02: "skipped=0" was logged as "[WARN] skipped item").
 UNNERFCC_SKIP_PATTERN = r"\bskipped\b(?!=0\b)"
