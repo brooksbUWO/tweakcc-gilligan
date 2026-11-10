@@ -199,7 +199,23 @@ def main():
         sys.stderr.write(f"Warning: Failed to fetch npm latest: {e}\n")
         npm_latest = "unknown"
 
-    common_versions = sort_versions(twk_versions.intersection(unf_versions))
+    # APPLICABLE is the newest version the local clones can patch NOW. A
+    # tweakcc-fixed release newer than the target still patches it, because the
+    # extractor matches the binary-format ERA, not an exact catalog filename
+    # (see the binary-format section of version-update.md). So the local common
+    # version is the newest unnerfcc catalog that tweakcc-fixed can reach, i.e.
+    # min(newest tweakcc-fixed, newest unnerfcc) -- NOT an exact set
+    # intersection, which wrongly fails when the two newest filenames differ
+    # (for example unnerfcc {2.1.321} and tweakcc-fixed {...,2.1.319,2.1.322}).
+    twk_sorted = sort_versions(twk_versions)
+    unf_sorted = sort_versions(unf_versions)
+    if twk_sorted and unf_sorted:
+        newest_twk = twk_sorted[-1]
+        newest_unf = unf_sorted[-1]
+        local_common_candidate = newest_unf if _vkey(newest_unf) <= _vkey(newest_twk) else newest_twk
+        common_versions = [local_common_candidate]
+    else:
+        common_versions = []
 
     print(f"tweakcc-fixed           : {len(twk_versions)} catalogs, newest {sort_versions(twk_versions)[-1] if twk_versions else 'none'}")
     print(f"unnerfcc                : {len(unf_versions)} catalogs, newest {sort_versions(unf_versions)[-1] if unf_versions else 'none'}")

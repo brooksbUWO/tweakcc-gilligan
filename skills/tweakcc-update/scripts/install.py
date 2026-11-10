@@ -493,7 +493,30 @@ def select_tweakcc_ref(repo, target):
                    f"data/prompts/prompts-{target}.json").strip()
     if sha:
         return f"last commit that catalogued CC {target}", sha
-    raise ValueError(f"tweakcc-fixed has no release tag or commit that catalogues CC {target}")
+    # No release catalogued the target EXACTLY (tweakcc-fixed can skip a version:
+    # it went 2.1.319 -> 2.1.322, so 2.1.321 has no catalog). The extractor still
+    # parses the target when it is the SAME Bun binary-format era (old
+    # single-module <= 2.1.241; code-split >= 2.1.246), so pick the NEAREST
+    # release whose newest catalog is >= the target and in the same era. That
+    # release parsed a binary of the target's format, so its extractor reads the
+    # target binary (see the binary-format section of version-update.md).
+    def _era(v):
+        return "code-split" if v >= (2, 1, 246) else "old"
+    target_era = _era(tv)
+    best_tag, best_ver = None, None
+    for tag in _git_out(repo, "tag", "--list", "v*", "--sort=-v:refname").split():
+        cv = _newest_catalog_version(repo, tag)
+        if cv is None:
+            continue
+        if cv >= tv and _era(cv) == target_era:
+            if best_ver is None or cv < best_ver:
+                best_ver, best_tag = cv, tag
+    if best_tag is not None:
+        bv = ".".join(str(x) for x in best_ver)
+        return (f"nearest same-era release catalogues CC {bv} >= target {target}",
+                _git_out(repo, "rev-list", "-n", "1", best_tag).strip())
+    raise ValueError(f"tweakcc-fixed has no release tag or commit that catalogues CC {target} "
+                     f"or a newer version in the same binary-format era")
 
 def checkout_exact(repo, sha):
     # reset --hard, not a bare checkout: an install run leaves CRLF/LF churn in
