@@ -147,9 +147,25 @@ def main():
         print(f"(output logged to {verify_log})")
     failed = False
 
-    # 1. Check version output (MUST carry dual version lines)
+    # Resolve the target binary FIRST, then run every check against that one
+    # resolved path. A bare `claude` on PATH can resolve a DIFFERENT install
+    # than find_claude_binary() does (two Claude Code installs on PATH, e.g. a
+    # stale npm shim ahead of the patched one), so the version line and the
+    # sentinel grep read different binaries and disagree (observed 2026-11-10:
+    # bare `claude --version` printed the stale D:\ install while the sentinel
+    # grep read the patched nodejs install).
+    bin_path = find_claude_binary()
+    if not bin_path or not bin_path.exists():
+        print("  [FAIL] Could not resolve installed Claude Code binary path.")
+        return 1
+
+    print(f"Target binary: {bin_path}")
+
+    # 1. Check version output (MUST carry dual version lines). Run --version
+    # against the resolved binary, not a bare `claude`, so this reads the same
+    # install the sentinel grep reads.
     try:
-        ver_res = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=15)
+        ver_res = subprocess.run([str(bin_path), "--version"], capture_output=True, text=True, timeout=15)
         ver_output = ver_res.stdout.strip()
         print("claude --version output:\n" + ver_output)
         version_lines = [line.strip() for line in ver_output.splitlines() if line.strip()]
@@ -161,14 +177,6 @@ def main():
     except Exception as e:
         print(f"  [FAIL] Error executing claude --version: {e}")
         failed = True
-
-    # 2. Resolve binary file for content greps
-    bin_path = find_claude_binary()
-    if not bin_path or not bin_path.exists():
-        print("  [FAIL] Could not resolve installed Claude Code binary path.")
-        return 1
-
-    print(f"Target binary: {bin_path}")
     
     try:
         data = bin_path.read_bytes()

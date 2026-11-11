@@ -71,7 +71,7 @@ The update is not done while the store round or the map still names the previous
 
 ## Remediation (changing the un-nerfs themselves)
 
-This section applies only inside the tweakcc project working copy. The gate scripts are in the `scripts/` directory of this skill. They read data that exist only in that workspace: `.claude/workspace/remediation/`, `.claude/workspace/prompt-store/`, and `D:/Data/Programs/AI/Claude/recipes/`. A user who installed the published plugin in a different location has none of those paths. That user must use the "Re-apply to the binary" task and the install steps of the version-update runbook.
+This section applies only inside the tweakcc project working copy. The gate scripts are in the `scripts/` directory of this skill. They read data that exist only in that workspace: `.workspace/remediation/`, `.workspace/prompt-store/`, and `D:/Data/Programs/AI/Claude/recipes/`. A user who installed the published plugin in a different location has none of those paths. That user must use the "Re-apply to the binary" task and the install steps of the version-update runbook.
 
 A remediation is out of scope for a version update. When un-nerf CONTENT changes (a new doctrine concept, a wrong rewrite, missing coverage), the method is recipe-concept-prompt-mapping. Use its most recent version in `D:/Data/Programs/AI/Claude/recipes/`. The method has three parts:
 
@@ -88,7 +88,7 @@ For the new-version case, see the "Recognition precondition" section of [referen
 | `unnerfcc/rules/<id>.json` (one file for each rule id) is the single source of truth for patch content. `apply-unnerfs.py` loads and applies it. | The rules moved to one JSON file for each id on 2026-09-02. `apply-unnerfs.py` is the loader, not the store. |
 | Write rewrites only from the prompts that the LIVE binary loads. Never write them from a cold read of the store. | A cold-read map was found invalid in 2026-08, and the work was done again. |
 | Gate a rewrite against the live prompt, never against stock only. | A gate against stock only lets regressions pass (2026-08-28 forensics). |
-| The doctrine (`notes/tweakcc-goals-concepts-*.md`) is the coverage denominator. The status of the concept map is in `.claude/workspace/prompt-store/CLAUDE.md`. | Both are the recorded state that a gate compares against. |
+| The doctrine (`notes/tweakcc-goals-concepts-*.md`) is the coverage denominator. The status of the concept map is in `.workspace/prompt-store/CLAUDE.md`. | Both are the recorded state that a gate compares against. |
 
 Run the seven gates below in order. Each gate must exit 0 before the next gate runs. For the full step detail, read [references/pipeline.md](references/pipeline.md). For the gate definitions, read [references/gates.md](references/gates.md).
 

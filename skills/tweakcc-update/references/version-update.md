@@ -150,7 +150,7 @@ un-nerf CONTENT is the separate Remediation job in SKILL.md. Never mix the two.
    - Build the new store round. Run these three commands in order:
      - `node unnerfcc/scripts/sync-version.mjs <target> --target <scratch> --no-manifest`
      - `python .claude/skills/tweakcc-update/scripts/store-provenance/build_queue.py --prompts-dir <scratch> --out <scratch>/queue.csv`
-     - `python .claude/skills/tweakcc-update/scripts/store-remediation/remediate.py materialize --queue <scratch>/queue.csv --prompts-dir <scratch> --out .claude/workspace/prompt-store --batch binary-faithful --revision r<NNNN>`
+     - `python .claude/skills/tweakcc-update/scripts/store-remediation/remediate.py materialize --queue <scratch>/queue.csv --prompts-dir <scratch> --out .workspace/prompt-store --batch binary-faithful --revision r<NNNN>`
 
      Then delete `<scratch>`. A second copy of a store round outside `.backups/` breaks rule
      9, and it makes the repo larger.
