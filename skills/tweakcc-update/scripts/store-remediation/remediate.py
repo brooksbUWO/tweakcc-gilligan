@@ -58,8 +58,8 @@ from state import (  # noqa: E402
     reduce_gate,
 )
 
-BACKUP_ROOT = Path(".claude/workspace/.backups")
-REMEDIATION_ROOT = Path(".claude/workspace/remediation")
+BACKUP_ROOT = Path(".workspace/.backups")
+REMEDIATION_ROOT = Path(".workspace/remediation")
 
 
 class HarnessError(RuntimeError):
@@ -630,7 +630,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     v.add_argument("--batch", help="resolve queue/records/evidence for this batch slug")
     v.add_argument("--remediation-root",
-                   help="root holding <batch>/ trees (default .claude/workspace/remediation)")
+                   help="root holding <batch>/ trees (default .workspace/remediation)")
     v.add_argument("--queue")
     v.add_argument("--records-dir")
     v.add_argument("--evidence")

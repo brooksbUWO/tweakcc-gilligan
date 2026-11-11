@@ -24,13 +24,13 @@ SCRIPT = os.path.join(HERE, "apply_recognition.py")
 
 
 def _find_workspace():
-    """Return the .claude/workspace directory of the project that holds
+    """Return the .workspace directory of the project that holds
     this test file. Walk up from HERE until a parent holds
-    .claude/workspace/prompt-store. If no parent holds one, return
+    .workspace/prompt-store. If no parent holds one, return
     None. A copy of the skill outside the project has no such parent."""
     d = HERE
     while True:
-        candidate = os.path.join(d, ".claude", "workspace")
+        candidate = os.path.join(d, ".workspace")
         if os.path.isdir(os.path.join(candidate, "prompt-store")):
             return candidate
         parent = os.path.dirname(d)

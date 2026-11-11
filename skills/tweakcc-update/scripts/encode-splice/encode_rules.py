@@ -2,7 +2,7 @@
 """Encode approved Phase 2 batch rewrites into unnerfcc apply-unnerfs.py Rule data.
 
 The transform is mechanical and deterministic. It reads ONLY the sealed, approved
-revision trees under .claude/workspace/remediation/<batch>/ (consumed read-only)
+revision trees under .workspace/remediation/<batch>/ (consumed read-only)
 and emits one Rule(stock, unnerf, description) per changed prompt, keyed by the
 prompt filename. It performs NO prompt editing: stock is the sealed before-body
 byte-for-byte, unnerf is the sealed after-body byte-for-byte.
@@ -38,14 +38,14 @@ from hashlib import file_digest
 from pathlib import Path
 
 def _find_workspace() -> Path:
-    """Return the .claude/workspace directory of the project. Walk up from
-    this script until a parent holds .claude/workspace. The script can then
+    """Return the .workspace directory of the project. Walk up from
+    this script until a parent holds .workspace. The script can then
     live in the skill or in the workspace, and it finds the same project."""
     for parent in Path(__file__).resolve().parents:
-        candidate = parent / ".claude" / "workspace"
+        candidate = parent / ".workspace"
         if candidate.is_dir():
             return candidate
-    raise SystemExit("error: no .claude/workspace directory above " + str(Path(__file__).resolve()))
+    raise SystemExit("error: no .workspace directory above " + str(Path(__file__).resolve()))
 
 
 WORKSPACE = _find_workspace()

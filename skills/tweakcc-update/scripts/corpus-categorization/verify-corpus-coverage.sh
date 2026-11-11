@@ -19,15 +19,15 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Walk up from this script to the project's .claude/workspace, so the script
+# Walk up from this script to the project's .workspace, so the script
 # works from the skill or from the workspace.
 WORKSPACE_DIR=""
 d="$SCRIPT_DIR"
 while [ "$d" != "/" ] && [ -n "$d" ]; do
-  if [ -d "$d/.claude/workspace" ]; then WORKSPACE_DIR="$d/.claude/workspace"; break; fi
+  if [ -d "$d/.workspace" ]; then WORKSPACE_DIR="$d/.workspace"; break; fi
   d="$(dirname "$d")"
 done
-[ -n "$WORKSPACE_DIR" ] || { echo "ASSERTION FAILED: no .claude/workspace above $SCRIPT_DIR" >&2; exit 1; }
+[ -n "$WORKSPACE_DIR" ] || { echo "ASSERTION FAILED: no .workspace above $SCRIPT_DIR" >&2; exit 1; }
 # The corpus version comes from --version <x.y.z>. Without the flag, use the
 # highest version under repos/pi-bald, compared as numbers.
 CORPUS_ROOT="$WORKSPACE_DIR/repos/pi-bald"

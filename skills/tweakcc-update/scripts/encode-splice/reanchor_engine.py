@@ -23,16 +23,16 @@ Stdlib only.
 import json, glob, os, re, sys, difflib
 
 def _find_workspace():
-    """Return the .claude/workspace directory of the project. Walk up from
-    this script until a parent holds .claude/workspace."""
+    """Return the .workspace directory of the project. Walk up from
+    this script until a parent holds .workspace."""
     d = os.path.dirname(os.path.abspath(__file__))
     while True:
-        candidate = os.path.join(d, ".claude", "workspace")
+        candidate = os.path.join(d, ".workspace")
         if os.path.isdir(candidate):
             return candidate.replace("\\", "/")
         parent = os.path.dirname(d)
         if parent == d:
-            raise SystemExit("error: no .claude/workspace directory above " + os.path.abspath(__file__))
+            raise SystemExit("error: no .workspace directory above " + os.path.abspath(__file__))
         d = parent
 
 
